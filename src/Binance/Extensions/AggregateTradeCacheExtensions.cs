@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Binance.Cache.Events;
 
 // ReSharper disable once CheckNamespace
 namespace Binance.Cache
@@ -13,10 +10,9 @@ namespace Binance.Cache
         /// </summary>
         /// <param name="cache"></param>
         /// <param name="symbol"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this IAggregateTradeCache cache, string symbol, CancellationToken token)
-            => cache.SubscribeAsync(symbol, default, null, token);
+        public static void Subscribe(this IAggregateTradeCache cache, string symbol)
+            => cache.Subscribe(symbol, default, null);
 
         /// <summary>
         /// 
@@ -24,10 +20,9 @@ namespace Binance.Cache
         /// <param name="cache"></param>
         /// <param name="symbol"></param>
         /// <param name="limit"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this IAggregateTradeCache cache, string symbol, int limit, CancellationToken token)
-            => cache.SubscribeAsync(symbol, limit, null, token);
+        public static void Subscribe(this IAggregateTradeCache cache, string symbol, int limit)
+            => cache.Subscribe(symbol, limit, null);
 
         /// <summary>
         /// 
@@ -35,9 +30,8 @@ namespace Binance.Cache
         /// <param name="cache"></param>
         /// <param name="symbol"></param>
         /// <param name="callback"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this IAggregateTradeCache cache, string symbol, Action<AggregateTradeCacheEventArgs> callback, CancellationToken token)
-            => cache.SubscribeAsync(symbol, default, callback, token);
+        public static void Subscribe(this IAggregateTradeCache cache, string symbol, Action<AggregateTradeCacheEventArgs> callback)
+            => cache.Subscribe(symbol, default, callback);
     }
 }

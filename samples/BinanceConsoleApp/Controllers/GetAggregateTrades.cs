@@ -1,10 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Binance;
-using Binance.Market;
 
 namespace BinanceConsoleApp.Controllers
 {
@@ -30,14 +28,7 @@ namespace BinanceConsoleApp.Controllers
                 int.TryParse(args[2], out limit);
             }
 
-            IEnumerable<AggregateTrade> trades = null;
-
-            // If live order book is active (for symbol), get cached data.
-            if (Program.AggregateTradeCache != null && Program.AggregateTradeCache.Trades.FirstOrDefault()?.Symbol == symbol)
-                trades = Program.AggregateTradeCache.Trades.Reverse().Take(limit); // get local cache.
-
-            if (trades == null)
-                trades = (await Program.Api.GetAggregateTradesAsync(symbol, limit, token)).Reverse();
+            var trades = (await Program.Api.GetAggregateTradesAsync(symbol, limit, token)).Reverse();
 
             lock (Program.ConsoleSync)
             {

@@ -1,4 +1,5 @@
-﻿namespace Binance.Account
+﻿// ReSharper disable once CheckNamespace
+namespace Binance
 {
     public sealed class DepositAddress
     {
@@ -34,7 +35,7 @@
             Throw.IfNullOrWhiteSpace(asset, nameof(asset));
             Throw.IfNullOrWhiteSpace(address, nameof(address));
 
-            Asset = asset;
+            Asset = asset.FormatSymbol();
             Address = address;
             AddressTag = addressTag;
         }

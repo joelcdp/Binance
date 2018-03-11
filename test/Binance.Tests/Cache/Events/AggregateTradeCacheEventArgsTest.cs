@@ -1,6 +1,5 @@
-﻿using Binance.Cache.Events;
-using Binance.Market;
-using System;
+﻿using System;
+using Binance.Cache;
 using Xunit;
 
 namespace Binance.Tests.Cache.Events
@@ -16,7 +15,7 @@ namespace Binance.Tests.Cache.Events
         [Fact]
         public void Properties()
         {
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var time = DateTimeOffset.FromUnixTimeMilliseconds(DateTime.UtcNow.ToTimestamp()).UtcDateTime;
 
             var symbol = Symbol.BTC_USDT;
             const long id = 12345;
@@ -27,7 +26,7 @@ namespace Binance.Tests.Cache.Events
             const bool isBuyerMaker = true;
             const bool isBestPriceMatch = true;
 
-            var trade = new AggregateTrade(symbol, id, price, quantity, firstTradeId, lastTradeId, timestamp, isBuyerMaker, isBestPriceMatch);
+            var trade = new AggregateTrade(symbol, id, price, quantity, firstTradeId, lastTradeId, time, isBuyerMaker, isBestPriceMatch);
 
             var trades = new[] { trade };
 

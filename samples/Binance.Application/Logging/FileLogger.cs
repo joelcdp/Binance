@@ -8,7 +8,7 @@ namespace Binance.Application.Logging
     {
         #region Private Constants
 
-        private const string Spaces = "      ";
+        private const string Spaces = "       ";
 
         #endregion Private Constants
 
@@ -67,7 +67,7 @@ namespace Binance.Application.Logging
                 lock (_sync)
                 {
                     using (var stream = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.None))
-                    using (var streamWriter = new StreamWriter(stream))
+                    using (var streamWriter = new StreamWriter(stream) { AutoFlush = false })
                     {
                         var now = DateTimeOffset.Now;
 
@@ -78,10 +78,17 @@ namespace Binance.Application.Logging
                             streamWriter.WriteLine($"{Spaces}{line}");
                         }
 
-                        if (exception != null)
+                        var prefix = string.Empty;
+
+                        while (exception != null)
                         {
-                            streamWriter.WriteLine($"{Spaces}(exception: \"{exception.Message}\")");
+                            streamWriter.WriteLine($"{Spaces}{prefix}(exception: \"{exception.Message}\")");
+
+                            prefix += "  ";
+                            exception = exception.InnerException;
                         }
+
+                        streamWriter.Flush();
                     }
                 }
             }

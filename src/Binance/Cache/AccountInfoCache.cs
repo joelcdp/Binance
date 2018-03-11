@@ -1,26 +1,75 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Binance.Account;
-using Binance.Api;
-using Binance.Api.WebSocket;
-using Binance.Api.WebSocket.Events;
-using Binance.Cache.Events;
+using Binance.Client;
 using Microsoft.Extensions.Logging;
 
 namespace Binance.Cache
 {
-    public sealed class AccountInfoCache : WebSocketClientCache<IUserDataWebSocketClient, AccountUpdateEventArgs, AccountInfoCacheEventArgs>, IAccountInfoCache
+    /// <summary>
+    /// The default <see cref="IAccountInfoCache"/> implementation.
+    /// </summary>
+    public class AccountInfoCache : AccountInfoCache<IUserDataClient>, IAccountInfoCache
+    {
+        /// <summary>
+        /// Default constructor provides default <see cref="IBinanceApi"/>
+        /// and default <see cref="IUserDataClient"/>, but no logger.
+        /// </summary>
+        public AccountInfoCache()
+            : this(new BinanceApi(), new UserDataClient())
+        { }
+
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        public AccountInfoCache(IBinanceApi api, IUserDataClient client, ILogger<AccountInfoCache> logger = null)
+            : base(api, client, logger)
+        { }
+    }
+
+    /// <summary>
+    /// The default <see cref="IAccountInfoCache{TClient}"/> implemenation.
+    /// </summary>
+    public abstract class AccountInfoCache<TClient> : JsonClientCache<TClient, AccountUpdateEventArgs, AccountInfoCacheEventArgs>, IAccountInfoCache<TClient>
+        where TClient : class, IUserDataClient
     {
         #region Public Properties
 
         public AccountInfo AccountInfo { get; private set; }
 
+        public override IEnumerable<string> SubscribedStreams
+        {
+            get
+            {
+                return _listenKey == null
+                    ? new string[] { }
+                    : new string[] { _listenKey };
+            }
+        }
+
         #endregion Public Properties
+
+        #region Private Fields
+
+        private string _listenKey;
+
+        private IBinanceApiUser _user;
+
+        #endregion Private Fields
 
         #region Constructors
 
-        public AccountInfoCache(IBinanceApi api, IUserDataWebSocketClient client, ILogger<AccountInfoCache> logger = null)
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        protected AccountInfoCache(IBinanceApi api, TClient client, ILogger<AccountInfoCache<TClient>> logger = null)
             : base(api, client, logger)
         { }
 
@@ -28,48 +77,62 @@ namespace Binance.Cache
 
         #region Public Methods
 
-        public async Task SubscribeAsync(IBinanceApiUser user, Action<AccountInfoCacheEventArgs> callback, CancellationToken token)
+        public void Subscribe(string listenKey, IBinanceApiUser user, Action<AccountInfoCacheEventArgs> callback)
         {
+            Throw.IfNullOrWhiteSpace(listenKey, nameof(listenKey));
             Throw.IfNull(user, nameof(user));
 
-            if (!token.CanBeCanceled)
-                throw new ArgumentException("Token must be capable of being in the canceled state.", nameof(token));
+            if (_listenKey != null)
+                throw new InvalidOperationException($"{GetType().Name}.{nameof(Subscribe)}: Already subscribed to a (user) listen key: \"{_listenKey}\"");
 
-            token.ThrowIfCancellationRequested();
+            _listenKey = listenKey;
+            _user = user;
 
-            Token = token;
-
-            LinkTo(Client, callback);
-
-            try
-            {
-                await Client.SubscribeAsync(user, token)
-                    .ConfigureAwait(false);
-            }
-            finally { UnLink(); }
+            OnSubscribe(callback);
+            SubscribeToClient();
         }
 
-        public override void LinkTo(IUserDataWebSocketClient client, Action<AccountInfoCacheEventArgs> callback = null)
+        public override IJsonSubscriber Unsubscribe()
         {
-            base.LinkTo(client, callback);
-            Client.AccountUpdate += OnClientEvent;
-        }
+            if (_listenKey == null)
+                return this;
 
-        public override void UnLink()
-        {
-            Client.AccountUpdate -= OnClientEvent;
-            base.UnLink();
+            UnsubscribeFromClient();
+            OnUnsubscribe();
+
+            AccountInfo = null;
+
+            _listenKey = default;
+            _user = default;
+
+            return this;
         }
 
         #endregion Public Methods
 
         #region Protected Methods
 
-        protected override Task<AccountInfoCacheEventArgs> OnAction(AccountUpdateEventArgs @event)
+        protected override void SubscribeToClient()
+        {
+            if (_listenKey == null)
+                return;
+
+            Client.Subscribe<AccountUpdateEventArgs>(_listenKey, _user, ClientCallback);
+        }
+
+        protected override void UnsubscribeFromClient()
+        {
+            if (_listenKey == null)
+                return;
+
+            Client.Unsubscribe<AccountUpdateEventArgs>(_listenKey, ClientCallback);
+        }
+
+        protected override ValueTask<AccountInfoCacheEventArgs> OnActionAsync(AccountUpdateEventArgs @event, CancellationToken token = default)
         {
             AccountInfo = @event.AccountInfo;
 
-            return Task.FromResult(new AccountInfoCacheEventArgs(AccountInfo));
+            return new ValueTask<AccountInfoCacheEventArgs>(new AccountInfoCacheEventArgs(AccountInfo));
         }
 
         #endregion Protected Methods

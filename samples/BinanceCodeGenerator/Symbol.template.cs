@@ -2,13 +2,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Binance.Account.Orders;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Binance
 {
     /// <summary>
     /// Defined symbols (for convenience/reference only).
     /// </summary>
+    /// <remarks></remarks>
     public sealed class Symbol : IComparable<Symbol>, IEquatable<Symbol>
     {
         #region Public Constants
@@ -18,13 +20,13 @@ namespace Binance
         /// </summary>
         // <<insert timestamp>>
 
+        // <<insert symbols>>
+
         // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
         public static readonly Symbol BCH_USDT;
         public static readonly Symbol BCH_BNB;
         public static readonly Symbol BCH_BTC;
         public static readonly Symbol BCH_ETH;
-
-        // <<insert symbols>>
 
         #endregion Public Constants
 
@@ -34,10 +36,11 @@ namespace Binance
 
         public static bool operator !=(Symbol x, Symbol y) => !(x == y);
 
-        public static implicit operator string(Symbol symbol) => symbol.ToString();
+        public static implicit operator string(Symbol symbol) => symbol?.ToString();
 
         public static implicit operator Symbol(string s)
         {
+            if (s == null) return null;
             var _s = s.FormatSymbol();
             lock (_sync)
             {
@@ -52,16 +55,7 @@ namespace Binance
         /// <summary>
         /// Symbol cache.
         /// </summary>
-        public static readonly IDictionary<string, Symbol> Cache = new Dictionary<string, Symbol>
-        {
-            // <<insert symbol definitions>>
-
-            // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
-            { "BCHUSDT", BCC_USDT },
-            { "BCHBNB", BCC_BNB },
-            { "BCHBTC", BCC_BTC },
-            { "BCHETH", BCC_ETH }
-        };
+        public static IDictionary<string, Symbol> Cache { get; }
 
         /// <summary>
         /// Get the symbol status.
@@ -79,17 +73,17 @@ namespace Binance
         public Asset QuoteAsset { get; }
 
         /// <summary>
-        /// Get base asset range.
+        /// Get base asset range (min/max quantity and step size).
         /// </summary>
         public InclusiveRange Quantity { get; }
 
         /// <summary>
-        /// Get the quote asset range.
+        /// Get the quote asset range (min/max price and tick size).
         /// </summary>
         public InclusiveRange Price { get; }
 
         /// <summary>
-        /// Get the minimum notional value.
+        /// Get the minimum notional value (price * quantity).
         /// </summary>
         public decimal NotionalMinimumValue { get; }
 
@@ -117,11 +111,29 @@ namespace Binance
 
         static Symbol()
         {
-            // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
-            BCH_USDT = BCC_USDT;
-            BCH_BNB = BCC_BNB;
-            BCH_BTC = BCC_BTC;
-            BCH_ETH = BCC_ETH;
+            try
+            {
+                // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
+                BCH_USDT = BCC_USDT;
+                BCH_BNB = BCC_BNB;
+                BCH_BTC = BCC_BTC;
+                BCH_ETH = BCC_ETH;
+
+                Cache = new Dictionary<string, Symbol>
+                {
+                    // <<insert symbol definitions>>
+
+                    // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
+                    { "BCHUSDT", BCC_USDT },
+                    { "BCHBNB", BCC_BNB },
+                    { "BCHBTC", BCC_BTC },
+                    { "BCHETH", BCC_ETH }
+                };
+            }
+            catch (Exception e)
+            {
+                Console.Error?.WriteLine($"{nameof(Binance)}.{nameof(Symbol)}(): \"{e.Message}\"");
+            }
         }
 
         /// <summary>
@@ -163,7 +175,41 @@ namespace Binance
         #region Public Methods
 
         /// <summary>
-        /// Update the symbol cache.
+        /// Verify that symbol is valid. If fails, but known to be valid,
+        /// call UpdateCacheAsync() to get the latest symbols.
+        /// </summary>
+        /// <param name="symbol"></param>
+        /// <returns></returns>
+        public static bool IsValid(string symbol)
+        {
+            if (string.IsNullOrWhiteSpace(symbol))
+                return false;
+
+            symbol = symbol.FormatSymbol();
+
+            lock (_sync)
+            {
+                return Cache.ContainsKey(symbol)
+                    && Cache[symbol].ToString() == symbol;
+            }
+        }
+
+        /// <summary>
+        /// Update the symbol cache and asset cache.
+        /// </summary>
+        /// <param name="api"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public static async Task UpdateCacheAsync(IBinanceApi api, CancellationToken token = default)
+        {
+            var symbols = await api.GetSymbolsAsync(token)
+                .ConfigureAwait(false);
+
+            UpdateCache(symbols);
+        }
+
+        /// <summary>
+        /// Update the symbol cache and asset cache.
         /// </summary>
         /// <param name="symbols">The symbols.</param>
         /// <returns></returns>
@@ -194,6 +240,9 @@ namespace Binance
                     Cache[symbol] = symbol;
                 }
             }
+
+            // ReSharper disable once PossibleMultipleEnumeration
+            Asset.UpdateCache(symbols);
         }
 
         public override string ToString()
@@ -203,6 +252,13 @@ namespace Binance
 
         public override bool Equals(object obj)
         {
+            // ReSharper disable once ConvertIfStatementToSwitchStatement
+            if (obj == null)
+                return false;
+
+            if (obj is Symbol symbol)
+                return Equals(symbol);
+
             return _symbol.Equals(obj);
         }
 
@@ -230,7 +286,5 @@ namespace Binance
         }
 
         #endregion IEquatable<Symbol>
-
-        // File generated by BinanceCodeGenerator tool.
     }
 }

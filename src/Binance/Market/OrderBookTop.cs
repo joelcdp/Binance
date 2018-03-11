@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Linq;
 
-namespace Binance.Market
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
     /// Best order book bid and ask price and quantity.
     /// </summary>
-    public sealed class OrderBookTop
+    public sealed class OrderBookTop : IEquatable<OrderBookTop>
     {
         #region Public Properties
 
@@ -32,8 +33,53 @@ namespace Binance.Market
         /// <summary>
         /// Construct order book top.
         /// </summary>
+        /// <param name="symbol"></param>
+        /// <param name="bid">The best bid price and quantity.</param>
+        /// <param name="ask">The best ask price and quantity.</param>
+        /// <returns></returns>
+        public static OrderBookTop Create(string symbol, (decimal, decimal) bid, (decimal, decimal) ask)
+            => Create(symbol, bid.Item1, bid.Item2, ask.Item1, ask.Item2);
+
+        /// <summary>
+        /// Construct order book top.
+        /// </summary>
+        /// <param name="symbol">The symbol.</param> 
+        /// <param name="bidPrice">The best bid price.</param> 
+        /// <param name="bidQuantity">The best bid quantity.</param> 
+        /// <param name="askPrice">The best ask price.</param> 
+        /// <param name="askQuantity">The best ask quantity.</param> 
+        /// <returns></returns>
+        public static OrderBookTop Create(string symbol, decimal bidPrice, decimal bidQuantity, decimal askPrice, decimal askQuantity)
+        {
+            return new OrderBookTop(symbol, new OrderBookPriceLevel(bidPrice, bidQuantity), new OrderBookPriceLevel(askPrice, askQuantity));
+        }
+
+        /// <summary>
+        /// Construct order book top.
+        /// </summary>
+        /// <param name="symbol">The symbol.</param>
+        /// <param name="bid">The bid price and quantity.</param>
+        /// <param name="ask">The ask price and quantity.</param>
+        public OrderBookTop(string symbol, OrderBookPriceLevel bid, OrderBookPriceLevel ask)
+        {
+            Throw.IfNullOrWhiteSpace(symbol, nameof(symbol));
+            Throw.IfNull(bid, nameof(bid));
+            Throw.IfNull(ask, nameof(ask));
+
+            if (bid.Price > ask.Price)
+                throw new ArgumentException($"{nameof(OrderBookTop)} ask price must be greater than the bid price.", nameof(ask.Price));
+
+            Symbol = symbol.FormatSymbol();
+
+            Bid = bid;
+            Ask = ask;
+        }
+
+        /// <summary>
+        /// Construct order book top.
+        /// </summary>
         /// <param name="orderBook">The order book.</param>
-        public OrderBookTop(OrderBook orderBook)
+        internal OrderBookTop(OrderBook orderBook)
         {
             Throw.IfNull(orderBook, nameof(orderBook));
 
@@ -43,27 +89,22 @@ namespace Binance.Market
             Ask = orderBook.Asks.First();
         }
 
-        /// <summary>
-        /// Construct order book top.
-        /// </summary>
-        /// <param name="symbol">The symbol.</param>
-        /// <param name="bidPrice">The best bid price.</param>
-        /// <param name="bidQuantity">The best bid quantity.</param>
-        /// <param name="askPrice">The best ask price.</param>
-        /// <param name="askQuantity">The best ask quantity.</param>
-        public OrderBookTop(string symbol, decimal bidPrice, decimal bidQuantity, decimal askPrice, decimal askQuantity)
+        #endregion Constructors
+
+        #region IEquatable
+
+        public bool Equals(OrderBookTop other)
         {
-            Throw.IfNullOrWhiteSpace(symbol, nameof(symbol));
+            if (other == null)
+                return false;
 
-            if (bidPrice > askPrice)
-                throw new ArgumentException($"{nameof(OrderBookTop)} ask price must be greater than the bid price.", nameof(askPrice));
-
-            Symbol = symbol;
-
-            Bid = new OrderBookPriceLevel(bidPrice, bidQuantity);
-            Ask = new OrderBookPriceLevel(askPrice, askQuantity);
+            return other.Symbol == Symbol
+                && other.Bid.Price == Bid.Price
+                && other.Bid.Quantity == Bid.Quantity
+                && other.Ask.Price == Ask.Price
+                && other.Ask.Quantity == Ask.Quantity;
         }
 
-        #endregion Constructors
+        #endregion IEquatable
     }
 }

@@ -1,5 +1,4 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
+﻿using Binance.Client;
 
 // ReSharper disable once CheckNamespace
 namespace Binance.Cache
@@ -10,19 +9,19 @@ namespace Binance.Cache
         /// 
         /// </summary>
         /// <param name="cache"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this ISymbolStatisticsCache cache, CancellationToken token)
-            => cache.SubscribeAsync(null, token);
+        public static void Subscribe<TClient>(this ISymbolStatisticsCache<TClient> cache)
+            where TClient : ISymbolStatisticsClient
+            => cache.Subscribe(null);
 
         /// <summary>
         /// 
         /// </summary>
         /// <param name="cache"></param>
         /// <param name="symbol"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this ISymbolStatisticsCache cache, string symbol, CancellationToken token)
-            => cache.SubscribeAsync(symbol, null, token);
+        public static void Subscribe<TClient>(this ISymbolStatisticsCache<TClient> cache, string symbol)
+            where TClient : ISymbolStatisticsClient
+            => cache.Subscribe(null, symbol);
     }
 }

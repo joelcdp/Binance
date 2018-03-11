@@ -3,20 +3,20 @@ using System.Threading;
 using System.Threading.Tasks;
 
 // ReSharper disable once CheckNamespace
-namespace Binance.Api
+namespace Binance
 {
-    public interface IApiRateLimiter
+    public interface IApiRateLimiter : IDisposable
     {
-        #region Public Properties
+        #region Properties
 
         /// <summary>
         /// Get or set the rate limiting enabled flag.
         /// </summary>
         bool IsEnabled { get; set; }
 
-        #endregion Public Properties
+        #endregion Properties
 
-        #region Public Methods
+        #region Methods
 
         /// <summary>
         /// Set a duration and maximum count (remove with count = 0).
@@ -34,6 +34,6 @@ namespace Binance.Api
         /// <returns></returns>
         Task DelayAsync(int count = 1, CancellationToken token = default);
 
-        #endregion Public Methods
+        #endregion Methods
     }
 }

@@ -1,17 +1,18 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Binance;
-using Binance.Api;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace BinanceConsoleApp.Examples
+// ReSharper disable once CheckNamespace
+namespace BinanceConsoleApp
 {
     internal class MinimalWithDependencyInjection
     {
         public static async Task ExampleMain(string[] args)
         {
             var services = new ServiceCollection()
-                .AddBinance().BuildServiceProvider();
+                .AddBinance() // add default Binance services.
+                .BuildServiceProvider();
 
             var api = services.GetService<IBinanceApi>();
 

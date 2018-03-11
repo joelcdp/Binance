@@ -1,18 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Binance;
-using Binance.Account;
-using Binance.Account.Orders;
-using Binance.Api;
-using Binance.Api.WebSocket;
 using Binance.Application;
-using Binance.Cache;
-using Binance.Market;
+using Binance.WebSocket;
 using BinanceConsoleApp.Controllers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,14 +27,8 @@ namespace BinanceConsoleApp
         public static IBinanceApi Api;
         public static IBinanceApiUser User;
 
-        public static ITradeCache TradeCache;
-        public static IOrderBookCache OrderBookCache;
-        public static ICandlestickCache CandlestickCache;
-        public static IAggregateTradeCache AggregateTradeCache;
-        public static IUserDataWebSocketClient UserDataClient;
-
-        public static Task LiveTask;
-        public static CancellationTokenSource LiveTokenSource;
+        public static IBinanceWebSocketClientManager ClientManager;
+        public static IUserDataWebSocketManager UserDataManager;
 
         public static readonly object ConsoleSync = new object();
 
@@ -50,10 +39,14 @@ namespace BinanceConsoleApp
 
         public static async Task Main(string[] args)
         {
-            // Un-comment (and add using BinanceConsoleApp.Examples) to run...
+            // Un-comment to run...
             //await AccountBalancesExample.ExampleMain(args);
+            //await AccountBalancesExample.AdvancedExampleMain(args);
             //await MinimalWithDependencyInjection.ExampleMain(args);
             //await MinimalWithoutDependencyInjection.ExampleMain(args);
+            //await OrderBookCacheAccountBalanceExample.AdvancedExampleMain(args);
+            //await ReadMeExample.ExampleMain(args);
+
 
             var cts = new CancellationTokenSource();
 
@@ -63,23 +56,30 @@ namespace BinanceConsoleApp
                 Configuration = new ConfigurationBuilder()
                     .SetBasePath(Directory.GetCurrentDirectory())
                     .AddJsonFile("appsettings.json", true, false)
-                    .AddUserSecrets<Program>()
+                    .AddUserSecrets<Program>() // for access to API key and secret.
                     .Build();
 
                 // Configure services.
-               ServiceProvider = new ServiceCollection()
-                    .AddBinance()
+                ServiceProvider = new ServiceCollection()
+                    // ReSharper disable once ArgumentsStyleLiteral
+                    .AddBinance(useSingleCombinedStream: true) // add default Binance services.
+
+                    // Use alternative, low-level, web socket client implementation.
+                    //.AddTransient<IWebSocketClient, WebSocket4NetClient>()
+                    //.AddTransient<IWebSocketClient, WebSocketSharpClient>()
+
                     .AddOptions()
-                    .AddLogging(builder => builder.SetMinimumLevel(LogLevel.Trace))
                     .Configure<BinanceApiOptions>(Configuration.GetSection("ApiOptions"))
-                    .Configure<UserDataWebSocketClientOptions>(Configuration.GetSection("UserClientOptions"))
+
+                    .AddLogging(builder => builder.SetMinimumLevel(LogLevel.Trace))
                     .BuildServiceProvider();
 
                 // Configure logging.
                 ServiceProvider
                     .GetService<ILoggerFactory>()
-                        .AddConsole(Configuration.GetSection("Logging").GetSection("Console"))
-                        .AddFile(Configuration.GetSection("Logging").GetSection("File"));
+                        .AddConsole(Configuration.GetSection("Logging:Console"))
+                        .AddFile(Configuration.GetSection("Logging:File"));
+                        // NOTE: Using ":" requires Microsoft.Extensions.Configuration.Binder.
 
                 var apiKey = Configuration["BinanceApiKey"] // user secrets configuration.
                     ?? Configuration.GetSection("User")["ApiKey"]; // appsettings.json configuration.
@@ -100,6 +100,20 @@ namespace BinanceConsoleApp
                 }
 
                 Api = ServiceProvider.GetService<IBinanceApi>();
+
+                ClientManager = ServiceProvider.GetService<IBinanceWebSocketClientManager>();
+
+                ClientManager.Error += (s, e) =>
+                {
+                    lock (ConsoleSync)
+                    {
+                        Console.WriteLine();
+                        Console.WriteLine($"! Client Manager Error: \"{e.Exception.Message}\"");
+                        Console.WriteLine();
+                    }
+                };
+
+                UserDataManager = ServiceProvider.GetService<IUserDataWebSocketManager>();
 
                 // Instantiate all assembly command handlers.
                 foreach (var type in Assembly.GetExecutingAssembly().GetTypes())
@@ -125,12 +139,14 @@ namespace BinanceConsoleApp
             }
             finally
             {
-                await DisableLiveTask();
+                await DisableLiveTaskAsync();
 
                 cts.Cancel();
                 cts.Dispose();
 
                 User?.Dispose();
+
+                ClientManager?.Dispose();
 
                 lock (ConsoleSync)
                 {
@@ -165,14 +181,16 @@ namespace BinanceConsoleApp
                 Console.WriteLine("  candles|kLines <symbol> <interval> [limit]            display candlesticks for a symbol.");
                 Console.WriteLine("  candlesIn|kLinesIn <symbol> <interval> <start> <end>  display candlesticks for a symbol in time interval.");
                 Console.WriteLine("  symbols|pairs [refresh]                               display all symbols (currency pairs).");
-                Console.WriteLine("  price <symbol>                                        display current price for a symbol or all symbols.");
+                Console.WriteLine("  price <symbol>                                        display current market price for a symbol or all symbols.");
+                Console.WriteLine("  rate <baseAsset> <quoteAsset>                         display exchange rate for any pair of assets.");
                 Console.WriteLine("  top <symbol>                                          display order book top price/qty for a symbol or all symbols.");
-                Console.WriteLine("  live depth|book <symbol>                              enable order book live feed for a symbol.");
-                Console.WriteLine("  live candles|kLines <symbol> <interval>               enable candlestick live feed for a symbol and interval.");
-                Console.WriteLine("  live aggTrades <symbol>                               enable aggregate trades live feed for a symbol.");
-                Console.WriteLine("  live trades <symbol>                                  enable trades live feed for a symbol.");
-                Console.WriteLine("  live account|user                                     enable user data live feed (api key required).");
-                Console.WriteLine("  live off                                              disable the websocket live feed (only one supported by app).");
+                Console.WriteLine("  live depth|book <symbol> [off]                        enable/disable order book live feed for a symbol.");
+                Console.WriteLine("  live candles|kLines <symbol> <interval> [off]         enable/disable candlestick live feed for a symbol and interval.");
+                Console.WriteLine("  live stats <symbol> [off]                             enable/disable 24-hour statistics live feed for a symbol.");
+                Console.WriteLine("  live aggTrades <symbol> [off]                         enable/disable aggregate trades live feed for a symbol.");
+                Console.WriteLine("  live trades <symbol> [off]                            enable/disable trades live feed for a symbol.");
+                Console.WriteLine("  live account|user [off]                               enable/disable user data live feed (api key required).");
+                Console.WriteLine("  live off                                              disable all web socket live feeds.");
                 Console.WriteLine();
                 Console.WriteLine(" Account (authentication required):");
                 Console.WriteLine("  market <side> <symbol> <qty>                          create a market order.");
@@ -188,12 +206,13 @@ namespace BinanceConsoleApp
                 Console.WriteLine("  order <symbol> <ID> cancel                            cancel an order by symbol and ID.");
                 Console.WriteLine("  account|balances                                      display user account information (including balances).");
                 Console.WriteLine("  myTrades <symbol> [limit]                             display user trades of a symbol.");
+                Console.WriteLine("  myTradesFrom <symbol> <tradeId> [limit]               display user trades of a symbol beginning with trade ID.");
                 Console.WriteLine("  myTrades order <symbol> <orderId>                     display user trades of a symbol by order ID.");
                 Console.WriteLine("  address <asset>                                       display user deposit address for an asset.");
                 Console.WriteLine("  deposits [asset]                                      display user deposits of an asset or all deposits.");
                 Console.WriteLine("  withdrawals [asset]                                   display user withdrawals of an asset or all withdrawals.");
                 Console.WriteLine("  withdraw <asset> <address> <amount> [description]     submit a withdraw request (NOTE: 'test only' does NOT apply).");
-                Console.WriteLine("  status                                                display account status.");
+                Console.WriteLine("  status [account|system]                               display account or system status.");
                 Console.WriteLine("  test <on|off>                                         determines if orders are test only (default: 'on').");
                 Console.WriteLine();
                 Console.WriteLine("  quit | exit                                           terminate the application.");
@@ -304,68 +323,20 @@ namespace BinanceConsoleApp
             while (true);
         }
 
-        internal static async Task DisableLiveTask()
+        internal static async Task DisableLiveTaskAsync()
         {
-            LiveTokenSource?.Cancel();
-
-            // Wait for live task to complete.
-            if (LiveTask != null && !LiveTask.IsCompleted)
-                await LiveTask;
-
-            LiveTokenSource?.Dispose();
-
-            if (TradeCache != null)
+            lock (ConsoleSync)
             {
-                lock (ConsoleSync)
+                if (ClientManager.Clients().Any(c => c.Publisher.PublishedStreams.Any()))
                 {
                     Console.WriteLine();
-                    Console.WriteLine("  ...live trades feed disabled.");
+                    Console.WriteLine("  ...live feeds disabled.");
                 }
             }
-            TradeCache = null;
 
-            if (OrderBookCache != null)
-            {
-                lock (ConsoleSync) 
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("  ...live order book feed disabled.");
-                }
-            }
-            OrderBookCache = null;
+            ClientManager.UnsubscribeAll();
 
-            if (CandlestickCache != null)
-            {
-                lock (ConsoleSync)
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("  ...live candlestick feed disabled.");
-                }
-            }
-            CandlestickCache = null;
-
-            if (AggregateTradeCache != null)
-            {
-                lock (ConsoleSync)
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("  ...live aggregate trades feed disabled.");
-                }
-            }
-            AggregateTradeCache = null;
-
-            if (UserDataClient != null)
-            {
-                lock (ConsoleSync)
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("  ...live account feed disabled.");
-                }
-            }
-            UserDataClient = null;
-
-            LiveTokenSource = null;
-            LiveTask = null;
+            await UserDataManager.UnsubscribeAllAsync();
         }
 
         internal static void Display(DepositAddress address)
@@ -395,6 +366,20 @@ namespace BinanceConsoleApp
             }
         }
 
+        internal static void Display(SymbolStatistics[] statistics)
+        {
+            lock (ConsoleSync)
+            {
+                foreach (var stats in statistics)
+                {
+                    Console.WriteLine($"  24-hour statistics for {stats.Symbol}:");
+                    Console.WriteLine($"    %: {stats.PriceChangePercent:0.00} | O: {stats.OpenPrice:0.00000000} | H: {stats.HighPrice:0.00000000} | L: {stats.LowPrice:0.00000000} | V: {stats.Volume:0.}");
+                    Console.WriteLine($"    Bid: {stats.BidPrice:0.00000000} | Last: {stats.LastPrice:0.00000000} | Ask: {stats.AskPrice:0.00000000} | Avg: {stats.WeightedAveragePrice:0.00000000}");
+                    Console.WriteLine();
+                }
+            }
+        }
+
         internal static void Display(OrderBookTop top)
         {
             lock (ConsoleSync)
@@ -407,7 +392,7 @@ namespace BinanceConsoleApp
         {
             lock (ConsoleSync)
             {
-                Console.WriteLine($"  {trade.Time().ToLocalTime()} - {trade.Symbol.PadLeft(8)} - {(trade.IsBuyerMaker ? "Sell" : "Buy").PadLeft(4)} - {trade.Quantity:0.00000000} @ {trade.Price:0.00000000}{(trade.IsBestPriceMatch ? "*" : " ")} - [ID: {trade.Id}] - {trade.Timestamp}");
+                Console.WriteLine($"  {trade.Time.ToLocalTime()} - {trade.Symbol.PadLeft(8)} - {(trade.IsBuyerMaker ? "Sell" : "Buy").PadLeft(4)} - {trade.Quantity:0.00000000} @ {trade.Price:0.00000000}{(trade.IsBestPriceMatch ? "*" : " ")} - [ID: {trade.Id}] - {trade.Time.ToTimestamp()}");
             }
         }
 
@@ -415,7 +400,7 @@ namespace BinanceConsoleApp
         {
             lock (ConsoleSync)
             {
-                Console.WriteLine($"  {trade.Time().ToLocalTime()} - {trade.Symbol.PadLeft(8)} - {(trade.IsBuyerMaker ? "Sell" : "Buy").PadLeft(4)} - {trade.Quantity:0.00000000} @ {trade.Price:0.00000000}{(trade.IsBestPriceMatch ? "*" : " ")} - [ID: {trade.Id}] - {trade.Timestamp}");
+                Console.WriteLine($"  {trade.Time.ToLocalTime()} - {trade.Symbol.PadLeft(8)} - {(trade.IsBuyerMaker ? "Sell" : "Buy").PadLeft(4)} - {trade.Quantity:0.00000000} @ {trade.Price:0.00000000}{(trade.IsBestPriceMatch ? "*" : " ")} - [ID: {trade.Id}] - {trade.Time.ToTimestamp()}");
             }
         }
 
@@ -423,7 +408,7 @@ namespace BinanceConsoleApp
         {
             lock (ConsoleSync)
             {
-                Console.WriteLine($"  {candlestick.Symbol} - O: {candlestick.Open:0.00000000} | H: {candlestick.High:0.00000000} | L: {candlestick.Low:0.00000000} | C: {candlestick.Close:0.00000000} | V: {candlestick.Volume:0.00} - [{candlestick.OpenTime}]");
+                Console.WriteLine($"  {candlestick.Symbol} - O: {candlestick.Open:0.00000000}  H: {candlestick.High:0.00000000}  L: {candlestick.Low:0.00000000}  C: {candlestick.Close:0.00000000}  V: {candlestick.Volume:0.00}  [{candlestick.OpenTime.ToTimestamp()}]");
             }
         }
 
@@ -439,7 +424,7 @@ namespace BinanceConsoleApp
         {
             lock (ConsoleSync)
             {
-                Console.WriteLine($"  {trade.Time().ToLocalTime().ToString(CultureInfo.CurrentCulture).PadLeft(22)} - {trade.Symbol.PadLeft(8)} - {(trade.IsBuyer ? "Buy" : "Sell").PadLeft(4)} - {(trade.IsMaker ? "Maker" : "Taker")} - {trade.Quantity:0.00000000} @ {trade.Price:0.00000000}{(trade.IsBestPriceMatch ? "*" : " ")} - Fee: {trade.Commission:0.00000000} {trade.CommissionAsset.PadRight(5)} [ID: {trade.Id}]");
+                Console.WriteLine($"  {trade.Time.ToLocalTime()} - {trade.Symbol.PadLeft(8)} - {(trade.IsBuyer ? "Buy" : "Sell").PadLeft(4)} - {(trade.IsMaker ? "Maker" : "Taker")} - {trade.Quantity:0.00000000} @ {trade.Price:0.00000000}{(trade.IsBestPriceMatch ? "*" : " ")} - Fee: {trade.Commission:0.00000000} {trade.CommissionAsset.PadRight(5)} ID: {trade.Id}");
             }
         }
 
@@ -447,10 +432,10 @@ namespace BinanceConsoleApp
         {
             lock (ConsoleSync)
             {
-                Console.WriteLine($"    Maker Commission:  {account.Commissions.Maker.ToString().PadLeft(3)} %");
-                Console.WriteLine($"    Taker Commission:  {account.Commissions.Taker.ToString().PadLeft(3)} %");
-                Console.WriteLine($"    Buyer Commission:  {account.Commissions.Buyer.ToString().PadLeft(3)} %");
-                Console.WriteLine($"    Seller Commission: {account.Commissions.Seller.ToString().PadLeft(3)} %");
+                Console.WriteLine($"    Maker Commission:  {account.Commissions.Maker.ToString().PadLeft(3)} bips  ({account.Commissions.Maker / 100.0m}%)");
+                Console.WriteLine($"    Taker Commission:  {account.Commissions.Taker.ToString().PadLeft(3)} bips  ({account.Commissions.Taker / 100.0m}%)");
+                Console.WriteLine($"    Buyer Commission:  {account.Commissions.Buyer.ToString().PadLeft(3)} bips  ({account.Commissions.Buyer / 100.0m}%)");
+                Console.WriteLine($"    Seller Commission: {account.Commissions.Seller.ToString().PadLeft(3)} bips  ({account.Commissions.Seller / 100.0m}%)");
                 Console.WriteLine($"    Can Trade:    {(account.Status.CanTrade ? "Yes" : "No").PadLeft(3)}");
                 Console.WriteLine($"    Can Withdraw: {(account.Status.CanWithdraw ? "Yes" : "No").PadLeft(3)}");
                 Console.WriteLine($"    Can Deposit:  {(account.Status.CanDeposit ? "Yes" : "No").PadLeft(3)}");

@@ -1,22 +1,21 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Binance.Account;
-using Binance.Account.Orders;
-using Binance.Market;
 
-namespace Binance.Api
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     public interface IBinanceApi
     {
-        #region Public Properties
+        #region Properties
 
         /// <summary>
         /// The (low-level) HTTP client.
         /// </summary>
         IBinanceHttpClient HttpClient { get; }
 
-        #endregion Public Properties
+        #endregion Properties
 
         #region Connectivity
 
@@ -27,11 +26,25 @@ namespace Binance.Api
         Task<bool> PingAsync(CancellationToken token = default);
 
         /// <summary>
-        /// Test connectivity to the server and get the current time (timestamp).
+        /// Test connectivity to the server and get the current time (Unix time milliseconds).
         /// </summary>
         /// <param name="token"></param>
         /// <returns></returns>
         Task<long> GetTimestampAsync(CancellationToken token = default);
+
+        /// <summary>
+        /// Get rate limit information.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        Task<IEnumerable<RateLimitInfo>> GetRateLimitInfoAsync(CancellationToken token = default);
+
+        /// <summary>
+        /// Get system status.
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        Task<BinanceStatus> GetSystemStatusAsync(CancellationToken token = default);
 
         #endregion Connectivity
 
@@ -89,11 +102,11 @@ namespace Binance.Api
         /// Get compressed, aggregate trades. Trades that fill at the time, from the same order, with the same price will have the quantity aggregated.
         /// </summary>
         /// <param name="symbol"></param>
-        /// <param name="startTime">Timestamp in ms to get aggregate trades from INCLUSIVE.</param>
-        /// <param name="endTime">Timestamp in ms to get aggregate trades until INCLUSIVE.</param>
+        /// <param name="startTime">Time to get aggregate trades from INCLUSIVE.</param>
+        /// <param name="endTime">Time to get aggregate trades until INCLUSIVE.</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        Task<IEnumerable<AggregateTrade>> GetAggregateTradesInAsync(string symbol, long startTime, long endTime, CancellationToken token = default);
+        Task<IEnumerable<AggregateTrade>> GetAggregateTradesAsync(string symbol, DateTime startTime, DateTime endTime, CancellationToken token = default);
 
         /// <summary>
         /// Get candlesticks for a symbol. Candlesticks/K-Lines are uniquely identified by their open time.
@@ -106,7 +119,7 @@ namespace Binance.Api
         /// <param name="endTime"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        Task<IEnumerable<Candlestick>> GetCandlesticksAsync(string symbol, CandlestickInterval interval, int limit = default, long startTime = default, long endTime = default, CancellationToken token = default);
+        Task<IEnumerable<Candlestick>> GetCandlesticksAsync(string symbol, CandlestickInterval interval, int limit = default, DateTime startTime = default, DateTime endTime = default, CancellationToken token = default);
 
         /// <summary>
         /// Get 24-hour price change statistics for a symbol.
@@ -292,7 +305,8 @@ namespace Binance.Api
         Task<string> WithdrawAsync(WithdrawRequest withdrawRequest, long recvWindow = default, CancellationToken token = default);
 
         /// <summary>
-        /// Get the deposit history.
+        /// Get the deposit history for an asset or all assets
+        /// within a specified time interval or not.
         /// </summary>
         /// <param name="user"></param>
         /// <param name="asset"></param>
@@ -302,10 +316,11 @@ namespace Binance.Api
         /// <param name="recvWindow"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        Task<IEnumerable<Deposit>> GetDepositsAsync(IBinanceApiUser user, string asset, DepositStatus? status = null, long startTime = 0, long endTime = 0, long recvWindow = 0, CancellationToken token = default);
+        Task<IEnumerable<Deposit>> GetDepositsAsync(IBinanceApiUser user, string asset = null, DepositStatus? status = null, DateTime startTime = default, DateTime endTime = default, long recvWindow = 0, CancellationToken token = default);
 
         /// <summary>
-        /// Get the withdrawal history.
+        /// Get the withdrawal history for an asset or all assets
+        /// within a specified time interval or not.
         /// </summary>
         /// <param name="user"></param>
         /// <param name="asset"></param>
@@ -315,7 +330,7 @@ namespace Binance.Api
         /// <param name="recvWindow"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        Task<IEnumerable<Withdrawal>> GetWithdrawalsAsync(IBinanceApiUser user, string asset, WithdrawalStatus? status = null, long startTime = 0, long endTime = 0, long recvWindow = 0, CancellationToken token = default);
+        Task<IEnumerable<Withdrawal>> GetWithdrawalsAsync(IBinanceApiUser user, string asset = null, WithdrawalStatus? status = null, DateTime startTime = default, DateTime endTime = default, long recvWindow = default, CancellationToken token = default);
 
         /// <summary>
         /// Get the deposit address for an asset.

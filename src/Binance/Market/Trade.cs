@@ -1,11 +1,12 @@
 ﻿using System;
 
-namespace Binance.Market
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
-    /// A abstract trade class.
+    /// An abstract trade class.
     /// </summary>
-    public class Trade : IChronological
+    public class Trade : IChronological, IEquatable<Trade>
     {
         #region Public Properties
 
@@ -40,9 +41,9 @@ namespace Binance.Market
         public long SellerOrderId { get; }
 
         /// <summary>
-        /// Get the trade timestamp.
+        /// Get the trade time.
         /// </summary>
-        public long Timestamp { get; }
+        public DateTime Time { get; }
 
         /// <summary>
         /// Get flag indicating if the buyer the maker.
@@ -67,7 +68,7 @@ namespace Binance.Market
         /// <param name="quantity">The quantity.</param>
         /// <param name="buyerOrderId">The buyer order ID.</param>
         /// <param name="sellerOrderId">The seller order ID.</param>
-        /// <param name="timestamp">The timestamp.</param>
+        /// <param name="time">The time.</param>
         /// <param name="isBuyerMaker">Is buyer maker.</param>
         /// <param name="isBestPriceMatch">Flag indicating if the trade was the best price match.</param>
         public Trade(
@@ -77,7 +78,7 @@ namespace Binance.Market
             decimal quantity,
             long buyerOrderId,
             long sellerOrderId,
-            long timestamp,
+            DateTime time,
             bool isBuyerMaker,
             bool isBestPriceMatch)
         {
@@ -89,20 +90,38 @@ namespace Binance.Market
                 throw new ArgumentException($"{nameof(Trade)}: price must not be less than 0.", nameof(price));
             if (quantity <= 0)
                 throw new ArgumentException($"{nameof(Trade)}: quantity must be greater than 0.", nameof(quantity));
-            if (timestamp <= 0)
-                throw new ArgumentException($"{nameof(Trade)}: timestamp must be greater than 0.", nameof(timestamp));
 
-            Symbol = symbol;
+            Symbol = symbol.FormatSymbol();
             Id = id;
             Price = price;
             Quantity = quantity;
             BuyerOrderId = buyerOrderId;
             SellerOrderId = sellerOrderId;
-            Timestamp = timestamp;
+            Time = time;
             IsBuyerMaker = isBuyerMaker;
             IsBestPriceMatch = isBestPriceMatch;
         }
 
         #endregion Constructors
+
+        #region IEquatable
+
+        public bool Equals(Trade other)
+        {
+            if (other == null)
+                return false;
+
+            return other.Symbol == Symbol
+                && other.Id == Id
+                && other.Price == Price
+                && other.Quantity == Quantity
+                && other.BuyerOrderId == BuyerOrderId
+                && other.SellerOrderId == SellerOrderId
+                && other.Time.Equals(Time)
+                && other.IsBuyerMaker == IsBuyerMaker
+                && other.IsBestPriceMatch == IsBestPriceMatch;
+        }
+
+        #endregion IEquatable
     }
 }

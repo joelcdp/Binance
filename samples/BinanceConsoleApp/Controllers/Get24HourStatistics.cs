@@ -32,6 +32,7 @@ namespace BinanceConsoleApp.Controllers
             else
             {
                 var stats = await Program.Api.Get24HourStatisticsAsync(symbol, token);
+
                 Program.Display(stats);
             }
 

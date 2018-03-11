@@ -1,18 +1,16 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Binance.Api.WebSocket;
-using Binance.Api.WebSocket.Events;
-using Microsoft.Extensions.DependencyInjection;
+using Binance.Client;
 
 namespace BinanceConsoleApp.Controllers
 {
     internal class LiveUserData : IHandleCommand
     {
-        public Task<bool> HandleAsync(string command, CancellationToken token = default)
+        public async Task<bool> HandleAsync(string command, CancellationToken token = default)
         {
             if (!command.StartsWith("live ", StringComparison.OrdinalIgnoreCase))
-                return Task.FromResult(false);
+                return false;
 
             var args = command.Split(' ');
 
@@ -24,50 +22,51 @@ namespace BinanceConsoleApp.Controllers
 
             if (!endpoint.Equals("account", StringComparison.OrdinalIgnoreCase)
                 && !endpoint.Equals("user", StringComparison.OrdinalIgnoreCase))
-                return Task.FromResult(false);
+                return false;
 
-            if (Program.LiveTask != null)
+            var enable = true;
+            if (args.Length > 2)
             {
+                if (args[2].Equals("off", StringComparison.OrdinalIgnoreCase))
+                    enable = false;
+            }
+
+            if (enable)
+            {
+                await Program.UserDataManager.SubscribeAsync<AccountUpdateEventArgs>(Program.User, HandleAccountUpdateEvent, token);
+                await Program.UserDataManager.SubscribeAsync<OrderUpdateEventArgs>(Program.User, HandleOrderUpdateEvent, token);
+                await Program.UserDataManager.SubscribeAsync<AccountTradeUpdateEventArgs>(Program.User, HandleTradeUpdateEvent, token);
+
                 lock (Program.ConsoleSync)
                 {
-                    Console.WriteLine("! A live task is currently active ...use 'live off' to disable.");
+                    Console.WriteLine();
+                    Console.WriteLine("  ...live user data feed ENABLED.");
+                    Console.WriteLine();
                 }
-                return Task.FromResult(true);
+            }
+            else // disable.
+            {
+                await Program.UserDataManager.UnsubscribeAsync<AccountUpdateEventArgs>(Program.User, HandleAccountUpdateEvent, token);
+                await Program.UserDataManager.UnsubscribeAsync<OrderUpdateEventArgs>(Program.User, HandleOrderUpdateEvent, token);
+                await Program.UserDataManager.UnsubscribeAsync<AccountTradeUpdateEventArgs>(Program.User, HandleTradeUpdateEvent, token);
+
+                lock (Program.ConsoleSync)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("  ...live user data feed DISABLED.");
+                    Console.WriteLine();
+                }
             }
 
-            if (Program.User == null)
-            {
-                Program.PrintApiNotice();
-                return Task.FromResult(true);
-            }
-
-            Program.LiveTokenSource = new CancellationTokenSource();
-
-            Program.UserDataClient = Program.ServiceProvider.GetService<IUserDataWebSocketClient>();
-            Program.UserDataClient.AccountUpdate += OnAccountUpdateEvent;
-            Program.UserDataClient.OrderUpdate += OnOrderUpdateEvent;
-            Program.UserDataClient.TradeUpdate += OnTradeUpdateEvent;
-
-            Program.LiveTask = Task.Run(() =>
-            {
-                Program.UserDataClient.SubscribeAsync(Program.User, Program.LiveTokenSource.Token);
-            }, token);
-
-            lock (Program.ConsoleSync)
-            {
-                Console.WriteLine();
-                Console.WriteLine("  ...live account feed enabled ...use 'live off' to disable.");
-            }
-
-            return Task.FromResult(true);
+            return true;
         }
 
-        private static void OnAccountUpdateEvent(object sender, AccountUpdateEventArgs e)
+        private static void HandleAccountUpdateEvent(AccountUpdateEventArgs e)
         {
             Program.Display(e.AccountInfo);
         }
 
-        private static void OnOrderUpdateEvent(object sender, OrderUpdateEventArgs e)
+        private static void HandleOrderUpdateEvent(OrderUpdateEventArgs e)
         {
             lock (Program.ConsoleSync)
             {
@@ -78,7 +77,7 @@ namespace BinanceConsoleApp.Controllers
             }
         }
 
-        private static void OnTradeUpdateEvent(object sender, AccountTradeUpdateEventArgs e)
+        private static void HandleTradeUpdateEvent(AccountTradeUpdateEventArgs e)
         {
             lock (Program.ConsoleSync)
             {

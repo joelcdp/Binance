@@ -1,6 +1,7 @@
-﻿using Binance.Api;
+﻿using System;
 
-namespace Binance.Account.Orders
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     public abstract class ClientOrder : IChronological
     {
@@ -32,14 +33,16 @@ namespace Binance.Account.Orders
         public decimal Quantity { get; set; }
 
         /// <summary>
-        /// Get or set the client order ID.
+        /// Get or set the client order ID (newClientOrderId).
+        /// NOTE: This value is set internally after order placement.
         /// </summary>
         public string Id { get; set; }
 
         /// <summary>
         /// Get the transact time.
+        /// NOTE: This value is set internally after order placement.
         /// </summary>
-        public long Timestamp { get; internal set; }
+        public DateTime Time { get; internal set; }
 
         #endregion Public Properties
 

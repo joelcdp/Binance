@@ -1,12 +1,8 @@
 ﻿using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Binance;
-using Binance.Api.WebSocket.Events;
-using Binance.Cache;
-using Binance.Market;
-using Microsoft.Extensions.DependencyInjection;
+using Binance.Client;
 
 namespace BinanceConsoleApp.Controllers
 {
@@ -25,23 +21,22 @@ namespace BinanceConsoleApp.Controllers
                 endpoint = args[1];
             }
 
-            string symbol = Symbol.BTC_USDT;
-            if (args.Length > 2)
-            {
-                symbol = args[2];
-            }
-
             if (!endpoint.Equals("kLines", StringComparison.OrdinalIgnoreCase)
                 && !endpoint.Equals("candles", StringComparison.OrdinalIgnoreCase))
                 return Task.FromResult(false);
 
-            if (Program.LiveTask != null)
+            string symbol = Symbol.BTC_USDT;
+            if (args.Length > 2)
             {
-                lock (Program.ConsoleSync)
+                symbol = args[2];
+                if (!Symbol.IsValid(symbol))
                 {
-                    Console.WriteLine("! A live task is currently active ...use 'live off' to disable.");
+                    lock (Program.ConsoleSync)
+                    {
+                        Console.WriteLine($"  Invalid symbol: \"{symbol}\"");
+                    }
+                    return Task.FromResult(true);
                 }
-                return Task.FromResult(true);
             }
 
             var interval = CandlestickInterval.Hour;
@@ -50,31 +45,49 @@ namespace BinanceConsoleApp.Controllers
                 interval = args[3].ToCandlestickInterval();
             }
 
-            Program.LiveTokenSource = new CancellationTokenSource();
-
-            Program.CandlestickCache = Program.ServiceProvider.GetService<ICandlestickCache>();
-            Program.CandlestickCache.Client.Candlestick += OnCandlestickEvent;
-
-            Program.LiveTask = Task.Run(() =>
+            var enable = true;
+            if (args.Length > 4)
             {
-                Program.CandlestickCache.SubscribeAsync(symbol, interval, e => { Program.Display(e.Candlesticks.Last()); }, Program.LiveTokenSource.Token);
-            }, token);
+                if (args[4].Equals("off", StringComparison.OrdinalIgnoreCase))
+                    enable = false;
+            }
 
-            lock (Program.ConsoleSync)
+            if (enable)
             {
-                Console.WriteLine();
-                Console.WriteLine($"  ...live candlestick feed enabled for symbol: {symbol}, interval: {interval} ...use 'live off' to disable.");
+                Program.ClientManager.CandlestickClient.Subscribe(symbol, interval, Display);
+                //Program.NewClientManager.CandlestickClient.Candlestick += OnCandlestickEvent; // TODO
+
+                lock (Program.ConsoleSync)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine($"  ...live candlestick feed ENABLED for symbol: {symbol}, interval: {interval}");
+                    Console.WriteLine();
+                }
+            }
+            else
+            {
+                Program.ClientManager.CandlestickClient.Unsubscribe(symbol, interval);
+
+                lock (Program.ConsoleSync)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine($"  ...live candlestick feed DISABLED for symbol: {symbol}, interval: {interval}");
+                    Console.WriteLine();
+                }
             }
 
             return Task.FromResult(true);
         }
 
-        private static void OnCandlestickEvent(object sender, CandlestickEventArgs e)
-        {
-            lock (Program.ConsoleSync)
-            {
-                Console.WriteLine($" Candlestick [{e.Candlestick.OpenTime}] - Is Final: {(e.IsFinal ? "YES" : "NO")}");
-            }
-        }
+        private void Display(CandlestickEventArgs args)
+            => Program.Display(args.Candlestick);
+
+        //private static void OnCandlestickEvent(object sender, CandlestickEventArgs e)
+        //{
+        //    lock (Program.ConsoleSync)
+        //    {
+        //        Console.WriteLine($" Candlestick [{e.Candlestick.OpenTime}] - Is Final: {(e.IsFinal ? "YES" : "NO")}");
+        //    }
+        //}
     }
 }

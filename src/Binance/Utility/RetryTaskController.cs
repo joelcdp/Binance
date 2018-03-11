@@ -1,93 +1,138 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Binance.Utility
 {
-    public class RetryTaskController : IDisposable
+    public class RetryTaskController : TaskController, IRetryTaskController
     {
-        #region Public Properties
+        #region Public Events
 
-        public Task Task { get; private set; }
+        public event EventHandler<PausingEventArgs> Pausing
+        {
+            add
+            {
+                if (_pausing == null || !_pausing.GetInvocationList().Contains(value))
+                {
+                    _pausing += value;
+                }
+            }
+            remove => _pausing -= value;
+        }
+        private EventHandler<PausingEventArgs> _pausing;
+
+        public event EventHandler<EventArgs> Resuming
+        {
+            add
+            {
+                if (_resuming == null || !_resuming.GetInvocationList().Contains(value))
+                {
+                    _resuming += value;
+                }
+            }
+            remove => _resuming -= value;
+        }
+        private EventHandler<EventArgs> _resuming;
+
+        #endregion Public Events
+
+        #region Public Properties
 
         public int RetryDelayMilliseconds { get; set; } = 5000;
 
         #endregion Public Properties
 
-        #region Private Fields
-
-        private readonly CancellationTokenSource _cts;
-
-        #endregion Private Fields
-
         #region Constructors
 
-        public RetryTaskController()
-        {
-            _cts = new CancellationTokenSource();
-        }
+        /// <summary>
+        /// Constructor.
+        /// </summary>
+        /// <param name="action"></param>
+        /// <param name="logger"></param>
+        public RetryTaskController(Func<CancellationToken, Task> action = null, ILogger<RetryTaskController> logger = null)
+            : base(action, logger)
+        { }
 
         #endregion Constructors
 
-        #region Public Methods
-
-        public void Begin(Func<CancellationToken, Task> action, Action<Exception> onError = null)
-        {
-            Task = Task.Run(async () =>
-            {
-                while (!_cts.IsCancellationRequested)
-                {
-                    try { await action(_cts.Token); }
-                    catch (OperationCanceledException) { }
-                    catch (Exception e)
-                    {
-                        if (!_cts.IsCancellationRequested)
-                        {
-                            onError?.Invoke(e);
-                            OnError(e);
-                        }
-                    }
-
-                    if (!_cts.IsCancellationRequested)
-                    {
-                        await Task.Delay(RetryDelayMilliseconds, _cts.Token);
-                    }
-                }
-            });
-        }
-
-        #endregion Public Methods
-
         #region Protected Methods
 
-        protected virtual void OnError(Exception e) { }
-
-        #endregion Protected Methods
-
-        #region IDisposable
-
-        private bool _disposed;
-
-        private void Dispose(bool disposing)
+        protected override async Task ActionAsync()
         {
-            if (_disposed)
-                return;
+            Logger?.LogDebug($"{nameof(RetryTaskController)}.{nameof(ActionAsync)}: Task beginning...  [thread: {Thread.CurrentThread.ManagedThreadId}]");
 
-            if (disposing)
+            while (!Cts.IsCancellationRequested)
             {
-                _cts?.Cancel();
-                Task?.GetAwaiter().GetResult();
-                _cts?.Dispose();
+                try
+                {
+                    await Action(Cts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { /* ignore */ }
+                catch (Exception e)
+                {
+                    Logger?.LogWarning(e, $"{nameof(RetryTaskController)}.{nameof(ActionAsync)}: Unhandled action exception.  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+                    if (!Cts.IsCancellationRequested)
+                    {
+                        OnError(e);
+                    }
+                }
+
+                try
+                {
+                    if (!Cts.IsCancellationRequested)
+                    {
+                        Logger?.LogDebug($"{nameof(RetryTaskController)}.{nameof(ActionAsync)}: Task pausing...  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+                        await DelayAsync(Cts.Token)
+                            .ConfigureAwait(false);
+                    }
+                }
+                catch { /* ignore */ }
+
+                if (Cts.IsCancellationRequested)
+                    continue;
+
+                Logger?.LogDebug($"{nameof(RetryTaskController)}.{nameof(ActionAsync)}: Task resuming...  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+                OnResuming();
             }
 
-            _disposed = true;
+            Logger?.LogDebug($"{nameof(RetryTaskController)}.{nameof(ActionAsync)}: Task complete.  [thread: {Thread.CurrentThread.ManagedThreadId}]");
         }
 
-        public void Dispose()
+        protected virtual Task DelayAsync(CancellationToken token)
         {
-            Dispose(true);
+            // Notify listeners.
+            OnPausing(TimeSpan.FromMilliseconds(RetryDelayMilliseconds));
+
+            Logger?.LogDebug($"{nameof(RetryTaskController)}: Delaying for {RetryDelayMilliseconds} msec.  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+            return Task.Delay(RetryDelayMilliseconds, token);
         }
 
-        #endregion IDisposable
+        /// <summary>
+        /// Raise a pausing event.
+        /// </summary>
+        /// <param name="timeSpan"></param>
+        protected void OnPausing(TimeSpan timeSpan)
+        {
+            try { _pausing?.Invoke(this, new PausingEventArgs(timeSpan)); }
+            catch { /* ignore */ }
+        }
+
+        /// <summary>
+        /// Raise a resuming event.
+        /// </summary>
+        protected void OnResuming()
+        {
+            try { _resuming?.Invoke(this, EventArgs.Empty); }
+            catch { /* ignore */ }
+        }
+
+        #endregion Protected Methods
     }
 }

@@ -4,7 +4,8 @@ using System.Globalization;
 using System.Net.Http;
 using System.Text;
 
-namespace Binance.Api
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     public sealed class BinanceHttpRequest
     {
@@ -21,9 +22,9 @@ namespace Binance.Api
         public string Body { get; set; }
 
         /// <summary>
-        /// Get the URI.
+        /// Get the path and query string.
         /// </summary>
-        public string Uri => _parameters.Count == 0 ? _path : $"{_path}?{QueryString}";
+        public string PathAndQuery => _parameters.Count == 0 ? _path : $"{_path}?{QueryString}";
 
         /// <summary>
         /// Get the request query string.
@@ -43,11 +44,6 @@ namespace Binance.Api
         /// Get the total parameters string.
         /// </summary>
         public string TotalParams => QueryString + Body;
-
-        /// <summary>
-        /// Get the rate limit weight.
-        /// </summary>
-        public int RateLimitWeight { get; }
 
         #endregion Public Properties
 
@@ -74,14 +70,11 @@ namespace Binance.Api
         /// Constructor.
         /// </summary>
         /// <param name="path"></param>
-        /// <param name="rateLimitWeight"></param>
-        public BinanceHttpRequest(string path, int rateLimitWeight = 1)
+        public BinanceHttpRequest(string path)
         {
             Throw.IfNullOrWhiteSpace(path, nameof(path));
 
             _path = path;
-
-            RateLimitWeight = rateLimitWeight;
         }
 
         #endregion Constructors
@@ -105,7 +98,7 @@ namespace Binance.Api
 
         public HttpRequestMessage CreateMessage(HttpMethod method)
         {
-            var requestMessage = new HttpRequestMessage(method, Uri);
+            var requestMessage = new HttpRequestMessage(method, PathAndQuery);
 
             if (ApiKey != null)
             {

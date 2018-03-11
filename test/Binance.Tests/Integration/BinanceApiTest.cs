@@ -5,8 +5,6 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Binance.Api;
-using Binance.Market;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 // ReSharper disable ReturnValueOfPureMethodIsNotUsed
@@ -51,6 +49,15 @@ namespace Binance.Tests.Integration
 
             Assert.True(time > DateTime.UtcNow.AddSeconds(-30));
             Assert.Equal(DateTimeKind.Utc, time.Kind);
+        }
+
+        [Fact]
+        public async Task GetRateLimitInfo()
+        {
+            var rateLimits = await _api.GetRateLimitInfoAsync();
+
+            Assert.NotNull(rateLimits);
+            Assert.NotEmpty(rateLimits);
         }
 
         #endregion Connectivity
@@ -104,10 +111,10 @@ namespace Binance.Tests.Integration
 
             var limitTrades = await _api.GetAggregateTradesAsync(Symbol.BTC_USDT, limit);
 
-            var startTime = limitTrades.First().Timestamp;
-            var endTime = limitTrades.Last().Timestamp;
+            var startTime = limitTrades.First().Time;
+            var endTime = limitTrades.Last().Time;
 
-            var trades = await _api.GetAggregateTradesInAsync(Symbol.BTC_USDT, startTime, endTime);
+            var trades = await _api.GetAggregateTradesAsync(Symbol.BTC_USDT, startTime, endTime);
 
             Assert.NotNull(trades);
             Assert.NotEmpty(trades);
@@ -138,7 +145,7 @@ namespace Binance.Tests.Integration
             var endTime = limitCandlesticks.Last().OpenTime;
             const int newLimit = 12;
 
-            var candlesticks = await _api.GetCandlesticksAsync(Symbol.BTC_USDT, CandlestickInterval.Hour, newLimit, startTime, endTime);
+            var candlesticks = await _api.GetCandlesticksAsync(Symbol.BTC_USDT, CandlestickInterval.Hour, startTime, endTime, newLimit);
 
             Assert.NotNull(candlesticks);
             Assert.NotEmpty(candlesticks);

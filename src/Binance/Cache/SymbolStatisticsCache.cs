@@ -3,40 +3,94 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Binance.Api;
-using Binance.Api.WebSocket;
-using Binance.Api.WebSocket.Events;
-using Binance.Cache.Events;
-using Binance.Market;
+using Binance.Client;
 using Microsoft.Extensions.Logging;
 
 namespace Binance.Cache
 {
-    public sealed class SymbolStatisticsCache : WebSocketClientCache<ISymbolStatisticsWebSocketClient, SymbolStatisticsEventArgs, SymbolStatisticsCacheEventArgs>, ISymbolStatisticsCache
+    /// <summary>
+    /// The default <see cref="ISymbolStatisticsCache"/> implementation.
+    /// </summary>
+    public class SymbolStatisticsCache : SymbolStatisticsCache<ISymbolStatisticsClient>, ISymbolStatisticsCache
+    {
+        /// <summary>
+        /// Default constructor provides default <see cref="IBinanceApi"/>
+        /// and default <see cref="ISymbolStatisticsClient"/>, but no logger.
+        /// </summary>
+        public SymbolStatisticsCache()
+            : this(new BinanceApi(), new SymbolStatisticsClient())
+        { }
+
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        public SymbolStatisticsCache(IBinanceApi api, ISymbolStatisticsClient client, ILogger<SymbolStatisticsCache> logger = null)
+            : base(api, client, logger)
+        { }
+    }
+
+    /// <summary>
+    /// The default <see cref="ISymbolStatisticsCache{TClient}"/> implemenation.
+    /// </summary>
+    public abstract class SymbolStatisticsCache<TClient> : JsonClientCache<TClient, SymbolStatisticsEventArgs, SymbolStatisticsCacheEventArgs>, ISymbolStatisticsCache<TClient>
+        where TClient : class, ISymbolStatisticsClient
     {
         #region Public Properties
 
         public IEnumerable<SymbolStatistics> Statistics
         {
-            get { lock (_sync) { return _statistics.Values.ToArray(); } }
+            get
+            {
+                lock (_sync)
+                {
+                    if (_symbols == null)
+                        return new SymbolStatistics[] { };
+
+                    return _symbols
+                        .Where(s => _statistics.ContainsKey(s))
+                        .Select(s => _statistics[s])
+                        .ToArray();
+                }
+            }
+        }
+
+        public override IEnumerable<string> SubscribedStreams
+        {
+            get
+            {
+                return _symbols == null
+                    ? new string[] { }
+                    : !_symbols.Any()
+                        ? new string[] { SymbolStatisticsClient.GetStreamName(null) }
+                        : _symbols.Select(s => SymbolStatisticsClient.GetStreamName(s)).ToArray();
+            }
         }
 
         #endregion Public Properties
 
         #region Private Fields
 
+        private IList<string> _symbols;
+
         private readonly IDictionary<string, SymbolStatistics> _statistics
             = new Dictionary<string, SymbolStatistics>();
 
         private readonly object _sync = new object();
 
-        private string _symbol;
-
         #endregion Private Fields
 
         #region Constructors
 
-        public SymbolStatisticsCache(IBinanceApi api, ISymbolStatisticsWebSocketClient client, ILogger<SymbolStatisticsCache> logger = null)
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        protected SymbolStatisticsCache(IBinanceApi api, TClient client, ILogger<SymbolStatisticsCache<TClient>> logger = null)
             : base(api, client, logger)
         { }
 
@@ -56,73 +110,109 @@ namespace Binance.Cache
             }
         }
 
-        public async Task SubscribeAsync(Action<SymbolStatisticsCacheEventArgs> callback, CancellationToken token)
+        public IEnumerable<SymbolStatistics> GetStatistics(params string[] symbols)
         {
-            if (!token.CanBeCanceled)
-                throw new ArgumentException("Token must be capable of being in the canceled state.", nameof(token));
+            Throw.IfNull(symbols, nameof(symbols));
 
-            token.ThrowIfCancellationRequested();
-
-            Token = token;
-
-            LinkTo(Client, callback);
-
-            try
+            lock (_sync)
             {
-                await Client.SubscribeAsync(token)
-                    .ConfigureAwait(false);
+                foreach (var symbol in symbols)
+                    yield return GetStatistics(symbol);
             }
-            finally { UnLink(); }
         }
 
-        public async Task SubscribeAsync(string symbol, Action<SymbolStatisticsCacheEventArgs> callback, CancellationToken token)
+        public void Subscribe(Action<SymbolStatisticsCacheEventArgs> callback, params string[] symbols)
         {
-            Throw.IfNullOrWhiteSpace(symbol, nameof(symbol));
+            if (_symbols != null)
+                throw new InvalidOperationException($"{nameof(SymbolStatisticsCache)}.{nameof(Subscribe)}: Already subscribed.");
 
-            if (!token.CanBeCanceled)
-                throw new ArgumentException("Token must be capable of being in the canceled state.", nameof(token));
+            _symbols = new List<string>();
 
-            token.ThrowIfCancellationRequested();
+            OnSubscribe(callback);
 
-            _symbol = symbol.FormatSymbol();
-
-            Token = token;
-
-            LinkTo(Client, callback);
-
-            try
+            if (symbols != null)
             {
-                await Client.SubscribeAsync(_symbol, token)
-                    .ConfigureAwait(false);
+                foreach (var s in symbols)
+                {
+                    Throw.IfNullOrWhiteSpace(s, nameof(s));
+
+                    var symbol = s.FormatSymbol();
+
+                    if (_symbols.Contains(symbol))
+                        continue;
+
+                    _symbols.Add(symbol);
+                }
             }
-            finally { UnLink(); }
+
+            SubscribeToClient();
         }
 
-        public override void LinkTo(ISymbolStatisticsWebSocketClient client, Action<SymbolStatisticsCacheEventArgs> callback = null)
+        public override IJsonSubscriber Unsubscribe()
         {
-            base.LinkTo(client, callback);
-            Client.StatisticsUpdate += OnClientEvent;
-        }
+            if (_symbols == null)
+                return this;
 
-        public override void UnLink()
-        {
-            Client.StatisticsUpdate -= OnClientEvent;
-            base.UnLink();
+            UnsubscribeFromClient();
+            OnUnsubscribe();
+
+            lock (_sync)
+            {
+                _statistics.Clear();
+            }
+
+            _symbols = null;
+
+            return this;
         }
 
         #endregion Public Methods
 
         #region Protected Methods
 
-        protected override async Task<SymbolStatisticsCacheEventArgs> OnAction(SymbolStatisticsEventArgs @event)
+        protected override void SubscribeToClient()
         {
-            if (_statistics.Count == 0)
-            {
-                Logger?.LogInformation($"{nameof(SymbolStatisticsCache)}: Initializing symbol statistics...");
+            if (_symbols == null)
+                return;
 
-                if (_symbol == null)
+            if (!_symbols.Any())
+            {
+                Client.Subscribe(ClientCallback);
+            }
+            else
+            {
+                Client.Subscribe(ClientCallback, _symbols.ToArray());
+            }
+        }
+
+        protected override void UnsubscribeFromClient()
+        {
+            if (_symbols == null)
+                return;
+
+            if (!_symbols.Any())
+            {
+                Client.Unsubscribe(ClientCallback);
+            }
+            else
+            {
+                Client.Unsubscribe(ClientCallback, _symbols.ToArray());
+            }
+        }
+
+        protected override async ValueTask<SymbolStatisticsCacheEventArgs> OnActionAsync(SymbolStatisticsEventArgs @event, CancellationToken token = default)
+        {
+            if (_symbols == null)
+                return null;
+
+            try
+            {
+                // ReSharper disable once InconsistentlySynchronizedField
+                if (_statistics.Count == 0 && !_symbols.Any())
                 {
-                    var statistics = await Api.Get24HourStatisticsAsync(Token)
+                    Logger?.LogInformation($"{nameof(SymbolStatisticsCache)}.{nameof(OnActionAsync)}: Initializing all symbol statistics...");
+
+                    var statistics = await Api.Get24HourStatisticsAsync(token)
                         .ConfigureAwait(false);
 
                     lock (_sync)
@@ -133,16 +223,30 @@ namespace Binance.Cache
                         }
                     }
                 }
-            }
 
-            lock (_sync)
-            {
-                foreach (var stats in @event.Statistics)
+                lock (_sync)
                 {
-                    _statistics[stats.Symbol] = stats;
-                }
+                    foreach (var stats in @event.Statistics)
+                    {
+                        _statistics[stats.Symbol] = stats;
+                    }
 
-                return new SymbolStatisticsCacheEventArgs(_statistics.Values.ToArray());
+                    if (!_symbols.Any())
+                    {
+                        return new SymbolStatisticsCacheEventArgs(_statistics.Values.ToArray());
+                    }
+
+                    var statistics = _symbols
+                        .Where(s => _statistics.ContainsKey(s))
+                        .Select(s => _statistics[s]);
+
+                    return new SymbolStatisticsCacheEventArgs(statistics.ToArray());
+                }
+            }
+            catch (Exception e)
+            {
+                Logger?.LogError(e, $"{nameof(SymbolStatisticsCache)}.{nameof(OnActionAsync)}: Failed.");
+                return null;
             }
         }
 

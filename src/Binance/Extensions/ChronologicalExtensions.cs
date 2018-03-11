@@ -1,20 +1,18 @@
-﻿using System;
-
-// ReSharper disable once CheckNamespace
+﻿// ReSharper disable once CheckNamespace
 namespace Binance
 {
     public static class ChronologicalExtensions
     {
         /// <summary>
-        /// Convert timestamp to <see cref="DateTime"/> (UTC).
+        /// Convert <see cref="System.DateTime"/> (UTC) to Unix time milliseconds.
         /// </summary>
         /// <param name="chronological"></param>
         /// <returns></returns>
-        public static DateTime Time(this IChronological chronological)
+        public static long Timestamp(this IChronological chronological)
         {
             Throw.IfNull(chronological, nameof(chronological));
 
-            return DateTimeOffset.FromUnixTimeMilliseconds(chronological.Timestamp).UtcDateTime;
+            return chronological.Time.ToTimestamp();
         }
     }
 }

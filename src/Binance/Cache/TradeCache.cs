@@ -3,24 +3,62 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Binance.Api;
-using Binance.Api.WebSocket;
-using Binance.Api.WebSocket.Events;
-using Binance.Cache.Events;
-using Binance.Market;
+using Binance.Client;
 using Microsoft.Extensions.Logging;
-
-// ReSharper disable InconsistentlySynchronizedField
 
 namespace Binance.Cache
 {
-    public sealed class TradeCache : WebSocketClientCache<ITradeWebSocketClient, TradeEventArgs, TradeCacheEventArgs>, ITradeCache
+    /// <summary>
+    /// The default <see cref="ITradeCache"/> implemenation.
+    /// </summary>
+    public class TradeCache : TradeCache<ITradeClient>, ITradeCache
     {
+        /// <summary>
+        /// Default constructor provides default <see cref="IBinanceApi"/>
+        /// and default <see cref="ITradeClient"/>, but no logger.
+        /// </summary>
+        public TradeCache()
+            : this(new BinanceApi(), new TradeClient())
+        { }
+
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        public TradeCache(IBinanceApi api, ITradeClient client, ILogger<TradeCache> logger = null)
+            : base(api, client, logger)
+        { }
+    }
+
+    /// <summary>
+    /// The default <see cref="ITradeCache{TClient}"/> implemenation.
+    /// </summary>
+    public abstract class TradeCache<TClient> : JsonClientCache<TClient, TradeEventArgs, TradeCacheEventArgs>, ITradeCache<TClient>
+        where TClient : class, ITradeClient
+    {
+        #region Public Events
+
+        public event EventHandler<EventArgs> OutOfSync;
+
+        #endregion Public Events
+
         #region Public Properties
 
         public IEnumerable<Trade> Trades
         {
             get { lock (_sync) { return _trades?.ToArray() ?? new Trade[] { }; } }
+        }
+
+        public override IEnumerable<string> SubscribedStreams
+        {
+            get
+            {
+                return _symbol == null
+                    ? new string[] { }
+                    : new string[] { TradeClient.GetStreamName(_symbol) };
+            }
         }
 
         #endregion Public Properties
@@ -38,7 +76,13 @@ namespace Binance.Cache
 
         #region Constructors
 
-        public TradeCache(IBinanceApi api, ITradeWebSocketClient client, ILogger<TradeCache> logger = null)
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        protected TradeCache(IBinanceApi api, TClient client, ILogger<TradeCache<TClient>> logger = null)
             : base(api, client, logger)
         {
             _trades = new Queue<Trade>();
@@ -48,90 +92,108 @@ namespace Binance.Cache
 
         #region Public Methods
 
-        public async Task SubscribeAsync(string symbol, int limit, Action<TradeCacheEventArgs> callback, CancellationToken token)
+        public void Subscribe(string symbol, int limit, Action<TradeCacheEventArgs> callback)
         {
             Throw.IfNullOrWhiteSpace(symbol, nameof(symbol));
 
-            if (!token.CanBeCanceled)
-                throw new ArgumentException("Token must be capable of being in the canceled state.", nameof(token));
+            if (limit < 0)
+                throw new ArgumentException($"{nameof(TradeCache)}.{nameof(Subscribe)}: {nameof(limit)} must be greater than or equal to 0.", nameof(limit));
 
-            token.ThrowIfCancellationRequested();
+            if (_symbol != null)
+                throw new InvalidOperationException($"{nameof(TradeCache)}.{nameof(Subscribe)}: Already subscribed to a symbol: \"{_symbol}\"");
 
             _symbol = symbol.FormatSymbol();
             _limit = limit;
-            Token = token;
 
-            LinkTo(Client, callback);
+            OnSubscribe(callback);
+            SubscribeToClient();
+        }
 
-            try
+        public override IJsonSubscriber Unsubscribe()
+        {
+            if (_symbol == null)
+                return this;
+
+            UnsubscribeFromClient();
+            OnUnsubscribe();
+
+            lock (_sync)
             {
-                await Client.SubscribeAsync(_symbol, token)
-                    .ConfigureAwait(false);
+                _trades.Clear();
             }
-            finally { UnLink(); }
-        }
 
-        public override void LinkTo(ITradeWebSocketClient client, Action<TradeCacheEventArgs> callback = null)
-        {
-            base.LinkTo(client, callback);
-            Client.Trade += OnClientEvent;
-        }
+            _symbol = null;
 
-        public override void UnLink()
-        {
-            Client.Trade -= OnClientEvent;
-            base.UnLink();
+            return this;
         }
 
         #endregion Public Methods
 
         #region Protected Methods
 
-        protected override async Task<TradeCacheEventArgs> OnAction(TradeEventArgs @event)
+        protected override void SubscribeToClient()
         {
-            if (_trades.Count == 0)
+            if (_symbol == null)
+                return;
+
+            Client.Subscribe(_symbol, ClientCallback);
+        }
+
+        protected override void UnsubscribeFromClient()
+        {
+            if (_symbol == null)
+                return;
+
+            Client.Unsubscribe(_symbol, ClientCallback);
+        }
+
+        protected override async ValueTask<TradeCacheEventArgs> OnActionAsync(TradeEventArgs @event, CancellationToken token = default)
+        {
+            var synchronize = false;
+
+            lock (_sync)
             {
-                await SynchronizeTradesAsync(_symbol, _limit, Token)
-                    .ConfigureAwait(false);
-            }
-
-            // If there is a gap in the trades received (out-of-sync).
-            if (@event.Trade.Id > _trades.Last().Id + 1)
-            {
-                Logger?.LogError($"{nameof(TradeCache)}: Synchronization failure (trade ID > last trade ID + 1).");
-
-                await Task.Delay(1000, Token)
-                    .ConfigureAwait(false); // wait a bit.
-
-                // Re-synchronize.
-                await SynchronizeTradesAsync(_symbol, _limit, Token)
-                    .ConfigureAwait(false);
-
-                // If still out-of-sync.
-                if (@event.Trade.Id > _trades.Last().Id + 1)
+                // If trades have not been initialized or are out-of-sync (gap in data).
+                if (_trades.Count == 0 || @event.Trade.Id > _trades.Last().Id + 1)
                 {
-                    Logger?.LogError($"{nameof(TradeCache)}: Re-Synchronization failure (trade ID > last trade ID + 1).");
+                    if (_trades.Count > 0)
+                    {
+                        OutOfSync?.Invoke(this, EventArgs.Empty);
+                    }
 
-                    // Reset and wait for next event.
-                    lock (_sync) _trades.Clear();
-                    return null;
+                    synchronize = true;
                 }
             }
 
-            // If the trade exists in the queue already (occurs after synchronization).
-            if (_trades.Any(t => t.Id == @event.Trade.Id))
-                return null;
-
-            Trade removed;
-            lock (_sync)
+            if (synchronize)
             {
-                removed = _trades.Dequeue();
-                _trades.Enqueue(@event.Trade);
+                await SynchronizeTradesAsync(_symbol, _limit, token)
+                    .ConfigureAwait(false);
             }
 
-            Logger?.LogDebug($"{nameof(TradeCache)}: Added trade [ID: {@event.Trade.Id}] and removed [ID: {removed.Id}].");
+            lock (_sync)
+            {
+                if (_trades.Count == 0 || @event.Trade.Id > _trades.Last().Id + 1)
+                {
+                    Logger?.LogError($"{nameof(TradeCache)} ({_symbol}): Failed to synchronize trades.  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+                    return null;
+                }
 
-            return new TradeCacheEventArgs(_trades.ToArray());
+                // Ignore trades older than the latest trade in queue.
+                if (@event.Trade.Id <= _trades.Last().Id)
+                {
+                    Logger?.LogDebug($"{nameof(TradeCache)} ({_symbol}): Ignoring event (trade ID: {@event.Trade.Id}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+                    return null;
+                }
+
+                var removed = _trades.Dequeue();
+                Logger?.LogDebug($"{nameof(TradeCache)} ({_symbol}): REMOVE trade (ID: {removed.Id}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+                _trades.Enqueue(@event.Trade);
+                Logger?.LogDebug($"{nameof(TradeCache)} ({_symbol}): ADD trade (ID: {@event.Trade.Id}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+                return new TradeCacheEventArgs(_trades.ToArray());
+            }
         }
 
         #endregion Protected Methods
@@ -147,7 +209,7 @@ namespace Binance.Cache
         /// <returns></returns>
         private async Task SynchronizeTradesAsync(string symbol, int limit, CancellationToken token)
         {
-            Logger?.LogInformation($"{nameof(TradeCache)}: Synchronizing trades...");
+            Logger?.LogInformation($"{nameof(TradeCache)} ({_symbol}): Synchronizing trades...  [thread: {Thread.CurrentThread.ManagedThreadId}]");
 
             var trades = await Api.GetTradesAsync(symbol, limit, token)
                 .ConfigureAwait(false);
@@ -155,11 +217,15 @@ namespace Binance.Cache
             lock (_sync)
             {
                 _trades.Clear();
+                // ReSharper disable once PossibleMultipleEnumeration
                 foreach (var trade in trades)
                 {
                     _trades.Enqueue(trade);
                 }
             }
+
+            // ReSharper disable once PossibleMultipleEnumeration
+            Logger?.LogInformation($"{nameof(TradeCache)} ({_symbol}): Synchronization complete (latest trade ID: {trades.Last().Id}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
         }
 
         #endregion Private Methods

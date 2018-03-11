@@ -1,5 +1,6 @@
 ﻿// ReSharper disable InconsistentNaming
-namespace Binance.Market
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
     /// Candlestick/K-Line interval.

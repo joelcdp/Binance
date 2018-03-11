@@ -1,77 +1,39 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Binance.Api.WebSocket;
-using Binance.Cache.Events;
-using Binance.Market;
+using Binance.Client;
 
 namespace Binance.Cache
 {
-    public interface ISymbolStatisticsCache
+    public interface ISymbolStatisticsCache : ISymbolStatisticsCache<ISymbolStatisticsClient>
+    { }
+
+    public interface ISymbolStatisticsCache<TClient> : IJsonClientCache<TClient, SymbolStatisticsCacheEventArgs>
+        where TClient : ISymbolStatisticsClient
     {
-        #region Public Events
-
-        /// <summary>
-        /// SymbolStatistics cache update event.
-        /// </summary>
-        event EventHandler<SymbolStatisticsCacheEventArgs> Update;
-
-        #endregion Public Events
-
-        #region Public Properties
-
         /// <summary>
         /// The symbol statistics. Can be empty if not yet synchronized.
         /// </summary>
         IEnumerable<SymbolStatistics> Statistics { get; }
 
         /// <summary>
-        /// The client that provides symbol statistics synchronization.
-        /// </summary>
-        ISymbolStatisticsWebSocketClient Client { get; }
-
-        #endregion Public Properties
-
-        #region Public Methods
-
-        /// <summary>
         /// Get statistics for a symbol.
         /// </summary>
         /// <param name="symbol"></param>
-        /// <returns></returns>
+        /// <returns><see cref="SymbolStatistics"/> or null if not subscribed to symbol or cache is not initialized.</returns>
         SymbolStatistics GetStatistics(string symbol);
 
         /// <summary>
-        /// Subscribe to all symbols.
+        /// Get statistics for multiple symbols.
         /// </summary>
-        /// <param name="callback"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        Task SubscribeAsync(Action<SymbolStatisticsCacheEventArgs> callback, CancellationToken token);
+        /// <param name="symbols"></param>
+        /// <returns><see cref="SymbolStatistics"/> or null if not subscribed to a symbol or cache is not initialized.</returns>
+        IEnumerable<SymbolStatistics> GetStatistics(params string[] symbols);
 
         /// <summary>
-        /// Subscribe to a symbol.
+        /// Subscribe to one or more symbols (or all symbols).
         /// </summary>
-        /// <param name="symbol"></param>
         /// <param name="callback"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        Task SubscribeAsync(string symbol, Action<SymbolStatisticsCacheEventArgs> callback, CancellationToken token);
-
-        /// <summary>
-        /// Link to a subscribed <see cref="ISymbolStatisticsWebSocketClient"/>.
-        /// </summary>
-        /// <param name="client"></param>
-        /// <param name="callback"></param>
-        /// <returns></returns>
-        void LinkTo(ISymbolStatisticsWebSocketClient client, Action<SymbolStatisticsCacheEventArgs> callback = null);
-
-        /// <summary>
-        /// Unlink from client.
-        /// </summary>
-        void UnLink();
-
-        #endregion Public Methods
+        /// <param name="symbols"></param>
+        void Subscribe(Action<SymbolStatisticsCacheEventArgs> callback, params string[] symbols);
     }
 }

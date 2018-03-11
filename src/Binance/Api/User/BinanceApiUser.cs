@@ -4,12 +4,12 @@ using System.Text;
 using Microsoft.Extensions.Options;
 
 // ReSharper disable once CheckNamespace
-namespace Binance.Api
+namespace Binance
 {
     /// <summary>
     /// Binance API user <see cref="IBinanceApiUser"/> implementation.
     /// </summary>
-    public sealed class BinanceApiUser : IBinanceApiUser
+    public sealed class BinanceApiUser : IBinanceApiUser, IEquatable<IBinanceApiUser>
     {
         #region Public Properties
 
@@ -49,7 +49,7 @@ namespace Binance.Api
                 _hmac = new HMACSHA256(Encoding.UTF8.GetBytes(apiSecret));
             }
 
-            RateLimiter = rateLimiter;
+            RateLimiter = rateLimiter ?? new ApiRateLimiter();
             var opt = options?.Value ?? new BinanceApiOptions();
 
             // Configure order rate limiter.
@@ -78,6 +78,25 @@ namespace Binance.Api
             return BitConverter.ToString(hash).Replace("-", string.Empty);
         }
 
+        public bool Equals(IBinanceApiUser user)
+        {
+            if (user == null)
+                return false;
+
+            if (ReferenceEquals(this, user))
+                return true;
+
+            return user.ApiKey == ApiKey;
+        }
+
+        public override bool Equals(object obj)
+            => Equals(obj as IBinanceApiUser);
+
+        public override int GetHashCode()
+        {
+            return ApiKey.GetHashCode();
+        }
+
         public override string ToString()
         {
             return ApiKey;
@@ -98,6 +117,7 @@ namespace Binance.Api
             {
                 // ReSharper disable once InconsistentlySynchronizedField
                 _hmac?.Dispose();
+                RateLimiter?.Dispose();
             }
 
             _disposed = true;
@@ -108,6 +128,6 @@ namespace Binance.Api
             Dispose(true);
         }
 
-        #endregion
+        #endregion IDisposable
     }
 }

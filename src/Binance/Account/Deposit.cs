@@ -1,6 +1,7 @@
 ﻿using System;
 
-namespace Binance.Account
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     public sealed class Deposit : IChronological
     {
@@ -19,7 +20,7 @@ namespace Binance.Account
         /// <summary>
         /// Get the insert time.
         /// </summary>
-        public long Timestamp { get; }
+        public DateTime Time { get; }
 
         /// <summary>
         /// Get the address.
@@ -50,24 +51,22 @@ namespace Binance.Account
         /// </summary>
         /// <param name="asset">The asset.</param>
         /// <param name="amount">The amount.</param>
-        /// <param name="timestamp">The timestamp.</param>
+        /// <param name="time">The time.</param>
         /// <param name="status">The status.</param>
         /// <param name="address">The address.</param>
         /// <param name="addressTag">The address tag.</param>
         /// <param name="txId">The transaction ID.</param>
-        public Deposit(string asset, decimal amount, long timestamp, DepositStatus status, string address, string addressTag = null, string txId = null)
+        public Deposit(string asset, decimal amount, DateTime time, DepositStatus status, string address, string addressTag = null, string txId = null)
         {
             Throw.IfNullOrWhiteSpace(asset, nameof(asset));
             Throw.IfNullOrWhiteSpace(address, nameof(address));
 
             if (amount <= 0)
-                throw new ArgumentException($"{nameof(Deposit)} amount must be greater than 0.", nameof(amount));
-            if (timestamp <= 0)
-                throw new ArgumentException($"{nameof(Deposit)} timestamp must be greater than 0.", nameof(timestamp));
+                throw new ArgumentException($"{nameof(Deposit)}: amount must be greater than 0.", nameof(amount));
 
-            Asset = asset;
+            Asset = asset.FormatSymbol();
             Amount = amount;
-            Timestamp = timestamp;
+            Time = time;
             Status = status;
             Address = address;
             AddressTag = addressTag;

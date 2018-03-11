@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Binance;
 using Binance.Application;
-using Binance.Market;
 
 namespace BinanceConsoleApp.Controllers
 {
@@ -36,15 +35,7 @@ namespace BinanceConsoleApp.Controllers
                 int.TryParse(args[2], out limit);
             }
 
-            OrderBook orderBook = null;
-
-            // If live order book is active (for symbol), get cached data.
-            if (Program.OrderBookCache != null && Program.OrderBookCache.OrderBook.Symbol == symbol)
-                orderBook = Program.OrderBookCache.OrderBook; // get local cache.
-
-            // Query order book from API, if needed.
-            if (orderBook == null)
-                orderBook = await Program.Api.GetOrderBookAsync(symbol, limit, token);
+            var orderBook = await Program.Api.GetOrderBookAsync(symbol, limit, token);
 
             lock (Program.ConsoleSync)
             {

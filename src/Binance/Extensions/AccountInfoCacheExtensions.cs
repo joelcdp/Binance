@@ -1,6 +1,4 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
-using Binance.Api;
+﻿using Binance.Client;
 
 // ReSharper disable once CheckNamespace
 namespace Binance.Cache
@@ -11,10 +9,10 @@ namespace Binance.Cache
         /// 
         /// </summary>
         /// <param name="cache"></param>
+        /// <param name="listenKey"></param>
         /// <param name="user"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        public static Task SubscribeAsync(this IAccountInfoCache cache, IBinanceApiUser user, CancellationToken token)
-            => cache.SubscribeAsync(user, null, token);
+        public static void Subscribe<TClient>(this IAccountInfoCache<TClient> cache, string listenKey, IBinanceApiUser user)
+            where TClient : IUserDataClient
+            => cache.Subscribe(listenKey, user, null);
     }
 }

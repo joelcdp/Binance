@@ -1,6 +1,5 @@
-﻿using Binance.Api;
-
-namespace Binance.Account
+﻿// ReSharper disable once CheckNamespace
+namespace Binance
 {
     public sealed class WithdrawRequest
     {
@@ -35,6 +34,18 @@ namespace Binance.Account
         /// Get or set a description of the address (optional).
         /// </summary>
         public string Name { get; set; }
+
+        /// <summary>
+        /// Get the withdraw request ID.
+        /// Set after response is received.
+        /// </summary>
+        public string Id { get; internal set; }
+
+        /// <summary>
+        /// Get the withdraw request message.
+        /// Set after response is received.
+        /// </summary>
+        public string Message { get; internal set; }
 
         #endregion Public Properties
 

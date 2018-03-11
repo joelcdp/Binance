@@ -3,11 +3,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
-namespace Binance.Api
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     internal sealed class TimestampProvider : ITimestampProvider
     {
         #region Public Properties
+
+        public TimeSpan TimestampOffsetRefreshPeriod { get; set; }
 
         public long TimestampOffset { get; private set; }
 
@@ -33,7 +36,7 @@ namespace Binance.Api
 
             try
             {
-                if (DateTime.UtcNow - _offsetLastUpdate > TimeSpan.FromMinutes(client.Options.TimestampOffsetRefreshPeriodMinutes))
+                if (DateTime.UtcNow - _offsetLastUpdate > TimestampOffsetRefreshPeriod)
                 {
                     const long n = 3;
 
@@ -50,6 +53,9 @@ namespace Binance.Api
 
                         // Calculate timestamp offset to account for time differences.
                         sum += JObject.Parse(json)["serverTime"].Value<long>() - systemTime;
+
+                        await Task.Delay(100, token)
+                            .ConfigureAwait(false);
                     } while (--count > 0);
 
                     // Calculate average offset.

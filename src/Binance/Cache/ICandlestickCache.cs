@@ -1,63 +1,27 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Binance.Api.WebSocket;
-using Binance.Cache.Events;
-using Binance.Market;
+using Binance.Client;
 
 namespace Binance.Cache
 {
-    public interface ICandlestickCache
+    public interface ICandlestickCache : ICandlestickCache<ICandlestickClient>
+    { }
+
+    public interface ICandlestickCache<TClient> : IJsonClientCache<TClient, CandlestickCacheEventArgs>
+        where TClient : ICandlestickClient
     {
-        #region Public Events
-
-        /// <summary>
-        /// Candlesticks update event.
-        /// </summary>
-        event EventHandler<CandlestickCacheEventArgs> Update;
-
-        #endregion Public Events
-
-        #region Public Properties
-
         /// <summary>
         /// The candlesticks. Can be empty if not yet synchronized or out-of-sync.
         /// </summary>
         IEnumerable<Candlestick> Candlesticks { get; }
 
         /// <summary>
-        /// The client that provides candlestick information.
-        /// </summary>
-        ICandlestickWebSocketClient Client { get; }
-
-        #endregion Public Properties
-
-        #region Public Methods
-
-        /// <summary>
-        /// 
+        /// Subscribe to a symbol, interval combination.
         /// </summary>
         /// <param name="symbol"></param>
         /// <param name="interval"></param>
         /// <param name="limit"></param>
         /// <param name="callback"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        Task SubscribeAsync(string symbol, CandlestickInterval interval, int limit, Action<CandlestickCacheEventArgs> callback, CancellationToken token);
-
-        /// <summary>
-        /// Link to a subscribed <see cref="ICandlestickWebSocketClient"/>.
-        /// </summary>
-        /// <param name="client"></param>
-        /// <param name="callback"></param>
-        void LinkTo(ICandlestickWebSocketClient client, Action<CandlestickCacheEventArgs> callback = null);
-
-        /// <summary>
-        /// Unlink from client.
-        /// </summary>
-        void UnLink();
-
-        #endregion Public Methods
+        void Subscribe(string symbol, CandlestickInterval interval, int limit, Action<CandlestickCacheEventArgs> callback);
     }
 }

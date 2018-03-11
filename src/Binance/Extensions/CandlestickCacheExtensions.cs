@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Binance.Cache.Events;
-using Binance.Market;
+using Binance.Client;
 
 // ReSharper disable once CheckNamespace
 namespace Binance.Cache
@@ -15,10 +12,10 @@ namespace Binance.Cache
         /// <param name="cache"></param>
         /// <param name="symbol"></param>
         /// <param name="interval"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this ICandlestickCache cache, string symbol, CandlestickInterval interval, CancellationToken token)
-            => cache.SubscribeAsync(symbol, interval, default, null, token);
+        public static void Subscribe<TClient>(this ICandlestickCache<TClient> cache, string symbol, CandlestickInterval interval)
+            where TClient : ICandlestickClient
+            => cache.Subscribe(symbol, interval, default, null);
 
         /// <summary>
         /// 
@@ -27,10 +24,10 @@ namespace Binance.Cache
         /// <param name="symbol"></param>
         /// <param name="interval"></param>
         /// <param name="limit"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this ICandlestickCache cache, string symbol, CandlestickInterval interval, int limit, CancellationToken token)
-            => cache.SubscribeAsync(symbol, interval, limit, null, token);
+        public static void Subscribe<TClient>(this ICandlestickCache<TClient> cache, string symbol, CandlestickInterval interval, int limit)
+            where TClient : ICandlestickClient
+            => cache.Subscribe(symbol, interval, limit, null);
 
         /// <summary>
         /// 
@@ -39,9 +36,9 @@ namespace Binance.Cache
         /// <param name="symbol"></param>
         /// <param name="interval"></param>
         /// <param name="callback"></param>
-        /// <param name="token"></param>
         /// <returns></returns>
-        public static Task SubscribeAsync(this ICandlestickCache cache, string symbol, CandlestickInterval interval, Action<CandlestickCacheEventArgs> callback, CancellationToken token)
-            => cache.SubscribeAsync(symbol, interval, default, callback, token);
+        public static void Subscribe<TClient>(this ICandlestickCache<TClient> cache, string symbol, CandlestickInterval interval, Action<CandlestickCacheEventArgs> callback)
+            where TClient : ICandlestickClient
+            => cache.Subscribe(symbol, interval, default, callback);
     }
 }

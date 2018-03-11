@@ -1,25 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Binance.Api.WebSocket;
-using Binance.Cache.Events;
-using Binance.Market;
+using Binance.Client;
 
 namespace Binance.Cache
 {
-    public interface IAggregateTradeCache
+    public interface IAggregateTradeCache : IAggregateTradeCache<IAggregateTradeClient>
+    { }
+
+    public interface IAggregateTradeCache<TClient> : IJsonClientCache<TClient, AggregateTradeCacheEventArgs>
+        where TClient : IAggregateTradeClient
     {
-        #region Public Events
-
         /// <summary>
-        /// Aggregate trades update event.
+        /// Aggregate trades out-of-sync event.
         /// </summary>
-        event EventHandler<AggregateTradeCacheEventArgs> Update;
-
-        #endregion Public Events
-
-        #region Public Properties
+        event EventHandler<EventArgs> OutOfSync;
 
         /// <summary>
         /// The latest trades. Can be empty if not yet synchronized or out-of-sync.
@@ -27,36 +21,11 @@ namespace Binance.Cache
         IEnumerable<AggregateTrade> Trades { get; }
 
         /// <summary>
-        /// The client that provides trade information.
+        /// Subscribe to a symbol.
         /// </summary>
-        IAggregateTradeWebSocketClient Client { get; }
-
-        #endregion Public Properties
-
-        #region Public Methods
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="symbol"></param>
-        /// <param name="limit"></param>
-        /// <param name="callback"></param>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        Task SubscribeAsync(string symbol, int limit, Action<AggregateTradeCacheEventArgs> callback, CancellationToken token);
-        
-        /// <summary>
-        /// Link to a subscribed <see cref="IAggregateTradeWebSocketClient"/>.
-        /// </summary>
-        /// <param name="client"></param>
-        /// <param name="callback"></param>
-        void LinkTo(IAggregateTradeWebSocketClient client, Action<AggregateTradeCacheEventArgs> callback = null);
-
-        /// <summary>
-        /// Unlink from client.
-        /// </summary>
-        void UnLink();
-
-        #endregion Public Methods
+        /// <param name="symbol">The symbol.</param>
+        /// <param name="limit">The number of trades to cache.</param>
+        /// <param name="callback">The callback (optional).</param>
+        void Subscribe(string symbol, int limit, Action<AggregateTradeCacheEventArgs> callback);
     }
 }

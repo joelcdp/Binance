@@ -1,20 +1,61 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Binance.Api;
-using Binance.Api.WebSocket;
-using Binance.Api.WebSocket.Events;
-using Binance.Cache.Events;
-using Binance.Market;
+using Binance.Client;
 using Microsoft.Extensions.Logging;
 
 namespace Binance.Cache
 {
-    public sealed class OrderBookCache : WebSocketClientCache<IDepthWebSocketClient, DepthUpdateEventArgs, OrderBookCacheEventArgs>, IOrderBookCache
+    /// <summary>
+    /// The default <see cref="IOrderBookCache"/> implementation.
+    /// </summary>
+    public class OrderBookCache : OrderBookCache<IDepthClient>, IOrderBookCache
     {
+        /// <summary>
+        /// Default constructor provides default <see cref="IBinanceApi"/>
+        /// and default <see cref="IDepthClient"/>, but no logger.
+        /// </summary>
+        public OrderBookCache()
+            : this(new BinanceApi(), new DepthClient())
+        { }
+
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        public OrderBookCache(IBinanceApi api, IDepthClient client, ILogger<OrderBookCache> logger = null)
+            : base(api, client, logger)
+        { }
+    }
+
+    /// <summary>
+    /// The default <see cref="IOrderBookCache{TClient}"/> implemenation.
+    /// </summary>
+    public abstract class OrderBookCache<TClient> : JsonClientCache<TClient, DepthUpdateEventArgs, OrderBookCacheEventArgs>, IOrderBookCache<TClient>
+        where TClient : class, IDepthClient
+    {
+        #region Public Events
+
+        public event EventHandler<EventArgs> OutOfSync;
+
+        #endregion Public Events
+
         #region Public Properties
 
         public OrderBook OrderBook => _orderBookClone;
+
+        public override IEnumerable<string> SubscribedStreams
+        {
+            get
+            {
+                return _symbol == null
+                    ? new string[] { }
+                    : new string[] { DepthClient.GetStreamName(_symbol, _limit) };
+            }
+        }
 
         #endregion Public Properties
 
@@ -30,7 +71,13 @@ namespace Binance.Cache
 
         #region Constructors
 
-        public OrderBookCache(IBinanceApi api, IDepthWebSocketClient client, ILogger<OrderBookCache> logger = null)
+        /// <summary>
+        /// The DI constructor.
+        /// </summary>
+        /// <param name="api">The Binance api (required).</param>
+        /// <param name="client">The JSON client (required).</param>
+        /// <param name="logger">The logger (optional).</param>
+        protected OrderBookCache(IBinanceApi api, TClient client, ILogger<OrderBookCache<TClient>> logger = null)
             : base(api, client, logger)
         { }
 
@@ -38,105 +85,102 @@ namespace Binance.Cache
 
         #region Public Methods
 
-        public async Task SubscribeAsync(string symbol, int limit, Action<OrderBookCacheEventArgs> callback, CancellationToken token)
+        public void Subscribe(string symbol, int limit, Action<OrderBookCacheEventArgs> callback)
         {
             Throw.IfNullOrWhiteSpace(symbol, nameof(symbol));
 
             if (limit < 0)
-                throw new ArgumentException($"{nameof(OrderBookCache)}: {nameof(limit)} must be greater than or equal to 0.", nameof(limit));
+                throw new ArgumentException($"{GetType().Name}: {nameof(limit)} must be greater than or equal to 0.", nameof(limit));
 
-            if (!token.CanBeCanceled)
-                throw new ArgumentException("Token must be capable of being in the canceled state.", nameof(token));
-
-            token.ThrowIfCancellationRequested();
+            if (_symbol != null)
+                throw new InvalidOperationException($"{GetType().Name}.{nameof(Subscribe)}: Already subscribed to a symbol: \"{_symbol}\"");
 
             _symbol = symbol.FormatSymbol();
             _limit = limit;
-            Token = token;
 
-            LinkTo(Client, callback);
-
-            try
-            {
-                await Client.SubscribeAsync(_symbol, limit, token)
-                    .ConfigureAwait(false);
-            }
-            finally { UnLink(); }
+            OnSubscribe(callback);
+            SubscribeToClient();
         }
 
-        public override void LinkTo(IDepthWebSocketClient client, Action<OrderBookCacheEventArgs> callback = null)
+        public override IJsonSubscriber Unsubscribe()
         {
-            base.LinkTo(client, callback);
-            Client.DepthUpdate += OnClientEvent;
-        }
+            if (_symbol == null)
+                return this;
 
-        public override void UnLink()
-        {
-            Client.DepthUpdate -= OnClientEvent;
-            base.UnLink();
+            UnsubscribeFromClient();
+            OnUnsubscribe();
+
+            _orderBookClone = _orderBook = null;
+
+            _symbol = null;
+
+            return this;
         }
 
         #endregion Public Methods
 
         #region Protected Methods
 
+        protected override void SubscribeToClient()
+        {
+            if (_symbol == null)
+                return;
+
+            Client.Subscribe(_symbol, _limit, ClientCallback);
+        }
+
+        protected override void UnsubscribeFromClient()
+        {
+            if (_symbol == null)
+                return;
+
+            Client.Unsubscribe(_symbol, _limit, ClientCallback);
+        }
+
         /// <summary>
         /// 
         /// </summary>
         /// <param name="event"></param>
+        /// <param name="token"></param>
         /// <returns></returns>
-        protected override async Task<OrderBookCacheEventArgs> OnAction(DepthUpdateEventArgs @event)
+        protected override async ValueTask<OrderBookCacheEventArgs> OnActionAsync(DepthUpdateEventArgs @event, CancellationToken token = default)
         {
             if (_limit > 0)
             {
                 // Ignore events with same or earlier order book update.
                 if (_orderBookClone != null && @event.LastUpdateId <= _orderBookClone.LastUpdateId)
+                {
+                    Logger?.LogDebug($"{GetType().Name} ({_symbol}): Ignoring event (last update ID: {@event.LastUpdateId}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
                     return null;
+                }
 
-                // Top <level> bids and asks, pushed every second.
+                // Top <limit> bids and asks, pushed every second.
                 // NOTE: LastUpdateId is not contiguous between events when using partial depth stream.
                 _orderBookClone = new OrderBook(_symbol, @event.LastUpdateId, @event.Bids, @event.Asks);
             }
             else
             {
-                // If order book has not been initialized.
-                if (_orderBook == null)
+                // If order book has not been initialized or is out-of-sync (gap in data).
+                while (_orderBook == null || @event.FirstUpdateId > _orderBook.LastUpdateId + 1)
                 {
+                    if (_orderBook != null)
+                    {
+                        OutOfSync?.Invoke(this, EventArgs.Empty);
+                    }
+
                     // Synchronize.
-                    await SynchronizeOrderBookAsync()
+                    await SynchronizeOrderBookAsync(token)
                         .ConfigureAwait(false);
                 }
 
                 // Ignore events prior to order book snapshot.
                 if (@event.LastUpdateId <= _orderBook.LastUpdateId)
-                    return null;
-
-                // If there is a gap in events (order book out-of-sync).
-                // ReSharper disable once InvertIf
-                if (@event.FirstUpdateId > _orderBook.LastUpdateId + 1)
                 {
-                    Logger?.LogError($"{nameof(OrderBookCache)}: Synchronization failure (first update ID > last update ID + 1).");
-
-                    await Task.Delay(1000, Token)
-                        .ConfigureAwait(false); // wait a bit.
-
-                    // Re-synchronize.
-                    await SynchronizeOrderBookAsync()
-                        .ConfigureAwait(false);
-
-                    // If still out-of-sync.
-                    // ReSharper disable once InvertIf
-                    if (@event.FirstUpdateId > _orderBook.LastUpdateId + 1)
-                    {
-                        Logger?.LogError($"{nameof(OrderBookCache)}: Re-Synchronization failure (first update ID > last update ID + 1).");
-
-                        // Reset and wait for next event.
-                        _orderBook = null;
-                        return null;
-                    }
+                    Logger?.LogDebug($"{GetType().Name} ({_symbol}): Ignoring event (last update ID: {@event.LastUpdateId}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+                    return null;
                 }
 
-                Logger?.LogDebug($"{nameof(OrderBookCache)}: Updating order book [last update ID: {@event.LastUpdateId}].");
+                Logger?.LogTrace($"{GetType().Name} ({_symbol}): Updating order book (last update ID: {_orderBook.LastUpdateId} => {@event.LastUpdateId}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
 
                 _orderBook.Modify(@event.LastUpdateId, @event.Bids, @event.Asks);
 
@@ -150,13 +194,15 @@ namespace Binance.Cache
 
         #region Private Methods
 
-        private async Task SynchronizeOrderBookAsync()
+        private async Task SynchronizeOrderBookAsync(CancellationToken token)
         {
-            Logger?.LogInformation($"{nameof(OrderBookCache)}: Synchronizing order book...");
+            Logger?.LogInformation($"{GetType().Name} ({_symbol}): Synchronizing order book...  [thread: {Thread.CurrentThread.ManagedThreadId}]");
 
             // Get order book snapshot with the maximum limit.
-            _orderBook = await Api.GetOrderBookAsync(_symbol, 1000, Token)
+            _orderBook = await Api.GetOrderBookAsync(_symbol, 1000, token)
                 .ConfigureAwait(false);
+
+            Logger?.LogInformation($"{GetType().Name} ({_symbol}): Synchronization complete (last update ID: {_orderBook.LastUpdateId}).  [thread: {Thread.CurrentThread.ManagedThreadId}]");
         }
 
         #endregion Private Methods

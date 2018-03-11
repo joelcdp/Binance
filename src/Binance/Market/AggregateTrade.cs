@@ -1,12 +1,13 @@
 ﻿using System;
 
-namespace Binance.Market
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
     /// Trades that fill at the same time, from the same order, with the same
     /// price will have an aggregate quantity.
     /// </summary>
-    public sealed class AggregateTrade : IChronological
+    public sealed class AggregateTrade : IChronological, IEquatable<AggregateTrade>
     {
         #region Public Properties
 
@@ -31,9 +32,9 @@ namespace Binance.Market
         public decimal Quantity { get; }
 
         /// <summary>
-        /// Get the trade timestamp.
+        /// Get the trade time.
         /// </summary>
-        public long Timestamp { get; }
+        public DateTime Time { get; }
 
         /// <summary>
         /// Get flag indicating if the buyer the maker.
@@ -68,7 +69,7 @@ namespace Binance.Market
         /// <param name="quantity">The aggregate quantity.</param>
         /// <param name="firstTradeId">The first trade ID.</param>
         /// <param name="lastTradeId">The last trade ID.</param>
-        /// <param name="timestamp">The timestamp.</param>
+        /// <param name="time">The time.</param>
         /// <param name="isBuyerMaker">Is buyer maker.</param>
         /// <param name="isBestPriceMatch">Is best price match.</param>
         public AggregateTrade(
@@ -78,7 +79,7 @@ namespace Binance.Market
             decimal quantity,
             long firstTradeId,
             long lastTradeId,
-            long timestamp,
+            DateTime time,
             bool isBuyerMaker,
             bool isBestPriceMatch)
         {
@@ -90,26 +91,44 @@ namespace Binance.Market
                 throw new ArgumentException($"{nameof(AggregateTrade)}: price must not be less than 0.", nameof(price));
             if (quantity <= 0)
                 throw new ArgumentException($"{nameof(AggregateTrade)}: quantity must be greater than 0.", nameof(quantity));
-            if (timestamp <= 0)
-                throw new ArgumentException($"{nameof(AggregateTrade)}: timestamp must be greater than 0.", nameof(timestamp));
             if (firstTradeId < 0)
-                throw new ArgumentException($"{nameof(AggregateTrade)} ID must not be less than 0.", nameof(firstTradeId));
+                throw new ArgumentException($"{nameof(AggregateTrade)}: ID must not be less than 0.", nameof(firstTradeId));
             if (lastTradeId < 0)
-                throw new ArgumentException($"{nameof(AggregateTrade)} ID must not be less than 0.", nameof(lastTradeId));
+                throw new ArgumentException($"{nameof(AggregateTrade)}: ID must not be less than 0.", nameof(lastTradeId));
             if (lastTradeId < firstTradeId)
-                throw new ArgumentException($"{nameof(AggregateTrade)} last trade ID must be greater than or equal to first trade ID.", nameof(lastTradeId));
+                throw new ArgumentException($"{nameof(AggregateTrade)}: last trade ID must be greater than or equal to first trade ID.", nameof(lastTradeId));
 
-            Symbol = symbol;
+            Symbol = symbol.FormatSymbol();
             Id = id;
             Price = price;
             Quantity = quantity;
-            Timestamp = timestamp;
-            IsBuyerMaker = isBuyerMaker;
-            IsBestPriceMatch = isBestPriceMatch;
             FirstTradeId = firstTradeId;
             LastTradeId = lastTradeId;
+            Time = time;
+            IsBuyerMaker = isBuyerMaker;
+            IsBestPriceMatch = isBestPriceMatch;
         }
 
         #endregion Constructors
+
+        #region IEquatable
+
+        public bool Equals(AggregateTrade other)
+        {
+            if (other == null)
+                return false;
+
+            return other.Symbol == Symbol
+                && other.Id == Id
+                && other.Price == Price
+                && other.Quantity == Quantity
+                && other.FirstTradeId == FirstTradeId
+                && other.LastTradeId == LastTradeId
+                && other.Time.Equals(Time)
+                && other.IsBuyerMaker == IsBuyerMaker
+                && other.IsBestPriceMatch == IsBestPriceMatch;
+        }
+
+        #endregion IEquatable
     }
 }

@@ -8,6 +8,7 @@ namespace Binance
     /// <summary>
     /// Defined assets (for convenience/reference only).
     /// </summary>
+    /// <remarks></remarks>
     public sealed class Asset : IComparable<Asset>, IEquatable<Asset>
     {
         #region Public Constants
@@ -17,10 +18,10 @@ namespace Binance
         /// </summary>
         // <<insert timestamp>>
 
+        // <<insert assets>>
+
         // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
         public static readonly Asset BCH;
-
-        // <<insert assets>>
 
         #endregion Public Constants
 
@@ -30,10 +31,11 @@ namespace Binance
 
         public static bool operator !=(Asset x, Asset y) => !(x == y);
 
-        public static implicit operator string(Asset asset) => asset.ToString();
+        public static implicit operator string(Asset asset) => asset?.ToString();
 
         public static implicit operator Asset(string s)
         {
+            if (s == null) return null;
             var _s = s.FormatSymbol();
             lock (_sync)
             {
@@ -48,13 +50,7 @@ namespace Binance
         /// <summary>
         /// Asset cache.
         /// </summary>
-        public static readonly IDictionary<string, Asset> Cache = new Dictionary<string, Asset>
-        {
-            // <<insert asset definitions>>
-            
-            // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
-            { "BCH", BCC }
-        };
+        public static IDictionary<string, Asset> Cache { get; }
 
         /// <summary>
         /// Get the asset symbol.
@@ -78,8 +74,23 @@ namespace Binance
 
         static Asset()
         {
-            // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
-            BCH = BCC;
+            try
+            {
+                // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
+                BCH = BCC;
+
+                Cache = new Dictionary<string, Asset>
+                {
+                    // <<insert asset definitions>>
+            
+                    // Redirect (BCH) Bitcoin Cash (BCC = BitConnect)
+                    { "BCH", BCC }
+                };
+            }
+            catch (Exception e)
+            {
+                Console.Error?.WriteLine($"{nameof(Binance)}.{nameof(Asset)}(): \"{e.Message}\"");
+            }
         }
 
         /// <summary>
@@ -92,9 +103,6 @@ namespace Binance
             if (string.IsNullOrWhiteSpace(symbol))
                 throw new ArgumentNullException(nameof(symbol));
 
-            if (precision <= 0)
-                throw new ArgumentException("Asset precision must be greater than 0.", nameof(precision));
-
             Symbol = symbol.ToUpperInvariant();
             Precision = precision;
         }
@@ -104,11 +112,57 @@ namespace Binance
         #region Public Methods
 
         /// <summary>
+        /// Verify that asset is valid. If fails, but known to be valid,
+        /// call Symbol.UpdateCacheAsync() to get the latest assets.
+        /// </summary>
+        /// <param name="asset"></param>
+        /// <returns></returns>
+        public static bool IsValid(string asset)
+        {
+            if (string.IsNullOrWhiteSpace(asset))
+                return false;
+
+            asset = asset.FormatSymbol();
+
+            lock (_sync)
+            {
+                return Cache.ContainsKey(asset)
+                    && Cache[asset].ToString() == asset;
+            }
+        }
+
+        public override bool Equals(object obj)
+        {
+            // ReSharper disable once ConvertIfStatementToSwitchStatement
+            if (obj == null)
+                return false;
+
+            if (obj is Asset asset)
+                return Equals(asset);
+
+            return Symbol.Equals(obj);
+        }
+
+        public override int GetHashCode()
+        {
+            return Symbol.GetHashCode();
+        }
+
+        public override string ToString()
+        {
+            return Symbol;
+        }
+
+        #endregion Public Methods
+
+        #region Internal Methods
+
+        /// <summary>
         /// Update the asset cache.
         /// </summary>
         /// <param name="symbols">The symbols.</param>
         /// <returns></returns>
-        public static void UpdateCache(IEnumerable<Symbol> symbols)
+        internal static void UpdateCache(IEnumerable<Symbol> symbols)
         {
             Throw.IfNull(symbols, nameof(symbols));
 
@@ -147,22 +201,7 @@ namespace Binance
             }
         }
 
-        public override bool Equals(object obj)
-        {
-            return Symbol.Equals(obj);
-        }
-
-        public override int GetHashCode()
-        {
-            return Symbol.GetHashCode();
-        }
-
-        public override string ToString()
-        {
-            return Symbol;
-        }
-
-        #endregion Public Methods
+        #endregion Internal Methods
 
         #region IComparable<Asset>
 
@@ -181,7 +220,5 @@ namespace Binance
         }
 
         #endregion IEquatable<Asset>
-
-        // File generated by BinanceCodeGenerator tool.
     }
 }

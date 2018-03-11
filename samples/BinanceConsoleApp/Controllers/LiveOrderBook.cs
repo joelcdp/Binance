@@ -1,11 +1,9 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Binance;
-using Binance.Cache;
-using Binance.Cache.Events;
-using Binance.Market;
-using Microsoft.Extensions.DependencyInjection;
+using Binance.Client;
 
 namespace BinanceConsoleApp.Controllers
 {
@@ -25,51 +23,60 @@ namespace BinanceConsoleApp.Controllers
                 endpoint = args[1];
             }
 
-            string symbol = Symbol.BTC_USDT;
-            if (args.Length > 2)
-            {
-                symbol = args[2];
-            }
-
             if (!endpoint.Equals("depth", StringComparison.OrdinalIgnoreCase)
                 && !endpoint.Equals("book", StringComparison.OrdinalIgnoreCase))
                 return Task.FromResult(false);
 
-            if (Program.LiveTask != null)
+            string symbol = Symbol.BTC_USDT;
+            if (args.Length > 2)
             {
-                lock (Program.ConsoleSync)
+                symbol = args[2];
+                if (!Symbol.IsValid(symbol))
                 {
-                    Console.WriteLine("! A live task is currently active ...use 'live off' to disable.");
+                    lock (Program.ConsoleSync)
+                    {
+                        Console.WriteLine($"  Invalid symbol: \"{symbol}\"");
+                    }
+                    return Task.FromResult(true);
                 }
-                return Task.FromResult(true);
             }
 
-            Program.LiveTokenSource = new CancellationTokenSource();
-
-            Program.OrderBookCache = Program.ServiceProvider.GetService<IOrderBookCache>();
-            Program.OrderBookCache.Update += OnOrderBookUpdated;
-
-            Program.LiveTask = Task.Run(() =>
+            var enable = true;
+            if (args.Length > 3)
             {
-                Program.OrderBookCache.SubscribeAsync(symbol, 5, Program.LiveTokenSource.Token);
-            }, token);
+                if (args[3].Equals("off", StringComparison.OrdinalIgnoreCase))
+                    enable = false;
+            }
 
-            lock (Program.ConsoleSync)
+            if (enable)
             {
-                Console.WriteLine();
-                Console.WriteLine($"  ...live order book enabled for symbol: {symbol} ...use 'live off' to disable.");
+                Program.ClientManager.DepthClient.Subscribe(symbol, 5, Display);
+
+                lock (Program.ConsoleSync)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine($"  ...live order book (depth) ENABLED for symbol: {symbol}");
+                    Console.WriteLine();
+                }
+            }
+            else
+            {
+                Program.ClientManager.DepthClient.Unsubscribe(symbol, 5);
+
+                lock (Program.ConsoleSync)
+                {
+                    Console.WriteLine();
+                    Console.WriteLine($"  ...live order book (depth) DISABLED for symbol: {symbol}");
+                    Console.WriteLine();
+                }
             }
 
             return Task.FromResult(true);
         }
 
-        private static void OnOrderBookUpdated(object sender, OrderBookCacheEventArgs e)
+        private static void Display(DepthUpdateEventArgs e)
         {
-            // NOTE: object 'sender' is IOrderBookCache (live order book)...
-            //       e.OrderBook is a clone/snapshot of the live order book.
-            var top = e.OrderBook.Top;
-            if (top == null)
-                return;
+            var top = OrderBookTop.Create(e.Symbol, e.Bids.First(), e.Asks.First());
 
             lock (Program.ConsoleSync)
             {

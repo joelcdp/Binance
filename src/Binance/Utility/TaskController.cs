@@ -1,56 +1,175 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Binance.Utility
 {
-    public class TaskController : IDisposable
+    public class TaskController : ITaskController
     {
+        #region Public Events
+
+        public event EventHandler<ErrorEventArgs> Error
+        {
+            add
+            {
+                if (_error == null || !_error.GetInvocationList().Contains(value))
+                {
+                    _error += value;
+                }
+            }
+            remove => _error -= value;
+        }
+        private EventHandler<ErrorEventArgs> _error;
+
+        #endregion Public Events
+
         #region Public Properties
 
-        public Task Task { get; private set; }
+        public bool IsActive { get; protected set; }
+
+        public Task Task { get; protected set; }
 
         #endregion Public Properties
 
-        #region Private Fields
+        #region Protected Fields
 
-        private readonly CancellationTokenSource _cts;
+        protected Func<CancellationToken, Task> Action;
 
-        #endregion Private Fields
+        protected ILogger<TaskController> Logger;
+
+        protected CancellationTokenSource Cts;
+
+        protected readonly object Sync = new object();
+
+        #endregion Protected Fields
 
         #region Constructors
 
-        public TaskController()
+        /// <summary>
+        /// Constructor.
+        /// </summary>
+        /// <param name="action"></param>
+        /// <param name="logger"></param>
+        public TaskController(Func<CancellationToken, Task> action = null, ILogger<TaskController> logger = null)
         {
-            _cts = new CancellationTokenSource();
+            Action = action;
+            Logger = logger;
         }
 
         #endregion Constructors
 
         #region Public Methods
 
-        public virtual void Begin(Func<CancellationToken, Task> action, Action<Exception> onError = null)
+        public virtual void Begin(Func<CancellationToken, Task> action = null)
         {
-            Task = Task.Run(async () =>
+            ThrowIfDisposed();
+
+            lock (Sync)
             {
-                try { await action(_cts.Token); }
-                catch (OperationCanceledException) { }
-                catch (Exception e)
-                {
-                    if (!_cts.IsCancellationRequested)
-                    {
-                        onError?.Invoke(e);
-                        OnError(e);
-                    }
-                }
-            });
+                if (IsActive)
+                    return;
+
+                if (action != null)
+                    Action = action;
+
+                Throw.IfNull(Action, nameof(action));
+
+                IsActive = true;
+
+                Cts?.Dispose();
+
+                Cts = new CancellationTokenSource();
+
+                Task = Task.Run(ActionAsync);
+            }
+        }
+
+        public virtual void Abort()
+        {
+            ThrowIfDisposed();
+
+            lock (Sync)
+            {
+                if (!IsActive)
+                    return;
+
+                IsActive = false;
+
+                Cts?.Cancel();
+            }
+        }
+
+        public virtual async Task CancelAsync()
+        {
+            Abort();
+
+            Task task;
+            lock (Sync)
+            {
+                task = Task ?? Task.CompletedTask;
+            }
+
+            if (!task.IsCompleted)
+            {
+                await task // wait for task to complete.
+                    .ConfigureAwait(false);
+            }
+
+            lock (Sync)
+            {
+                Cts?.Dispose();
+                Cts = null;
+            }
+        }
+
+        public virtual async Task RestartAsync()
+        {
+            await CancelAsync()
+                .ConfigureAwait(false);
+
+            Begin();
         }
 
         #endregion Public Methods
 
         #region Protected Methods
 
-        protected virtual void OnError(Exception e) { }
+        protected virtual async Task ActionAsync()
+        {
+            Logger?.LogDebug($"{nameof(TaskController)}.{nameof(ActionAsync)}: Task beginning...  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+            // ReSharper disable once InconsistentlySynchronizedField
+            try
+            {
+                await Action(Cts.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { /* ignore */  }
+            catch (Exception e)
+            {
+                Logger?.LogWarning(e, $"{nameof(TaskController)}.{nameof(ActionAsync)}: Unhandled action exception.  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+
+                // ReSharper disable once InconsistentlySynchronizedField
+                if (!Cts.IsCancellationRequested)
+                {
+                    OnError(e);
+                }
+            }
+
+            Logger?.LogDebug($"{nameof(TaskController)}.{nameof(ActionAsync)}: Task complete.  [thread: {Thread.CurrentThread.ManagedThreadId}]");
+        }
+
+        /// <summary>
+        /// Raise an error event.
+        /// </summary>
+        /// <param name="exception"></param>
+        protected void OnError(Exception exception)
+        {
+            try { _error?.Invoke(this, new ErrorEventArgs(exception)); }
+            catch { /* ignore */ }
+        }
 
         #endregion Protected Methods
 
@@ -58,16 +177,20 @@ namespace Binance.Utility
 
         private bool _disposed;
 
-        private void Dispose(bool disposing)
+        protected void ThrowIfDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(TaskController));
+        }
+
+        protected virtual void Dispose(bool disposing)
         {
             if (_disposed)
                 return;
 
             if (disposing)
             {
-                _cts?.Cancel();
-                Task?.GetAwaiter().GetResult();
-                _cts?.Dispose();
+                CancelAsync().GetAwaiter().GetResult();
             }
 
             _disposed = true;

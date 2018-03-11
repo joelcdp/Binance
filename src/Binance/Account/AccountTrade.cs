@@ -1,13 +1,12 @@
 ﻿using System;
-using Binance.Api;
-using Binance.Market;
 
-namespace Binance.Account
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
     /// An account trade.
     /// </summary>
-    public sealed class AccountTrade : Trade
+    public sealed class AccountTrade : Trade, IEquatable<AccountTrade>
     {
         #region Public Properties
 
@@ -17,7 +16,7 @@ namespace Binance.Account
         public long OrderId { get; }
 
         /// <summary>
-        /// Get the commission.
+        /// Get the commission (commission asset quantity).
         /// </summary>
         public decimal Commission { get; }
 
@@ -50,7 +49,7 @@ namespace Binance.Account
         /// <param name="quantity"></param>
         /// <param name="commission"></param>
         /// <param name="commissionAsset"></param>
-        /// <param name="timestamp"></param>
+        /// <param name="time"></param>
         /// <param name="isBuyer"></param>
         /// <param name="isMaker"></param>
         /// <param name="isBestPriceMatch"></param>
@@ -62,16 +61,14 @@ namespace Binance.Account
             decimal quantity,
             decimal commission,
             string commissionAsset,
-            long timestamp,
+            DateTime time,
             bool isBuyer,
             bool isMaker,
             bool isBestPriceMatch)
-            : base(symbol, id, price, quantity, BinanceApi.NullId, BinanceApi.NullId, timestamp, !(isBuyer ^ isMaker), isBestPriceMatch)
+            : base(symbol, id, price, quantity, isBuyer ? orderId : BinanceApi.NullId, !isBuyer ? orderId : BinanceApi.NullId, time, !(isBuyer ^ isMaker), isBestPriceMatch)
         {
             if (orderId < 0)
                 throw new ArgumentException($"{nameof(Trade)}: ID must not be less than 0.", nameof(orderId));
-
-            AccountCommissions.ThrowIfCommissionIsInvalid(commission, nameof(commission));
 
             OrderId = orderId;
             Commission = commission;
@@ -81,5 +78,22 @@ namespace Binance.Account
         }
 
         #endregion Constructors
+
+        #region IEquatable
+
+        public bool Equals(AccountTrade other)
+        {
+            if (other == null)
+                return false;
+
+            return base.Equals(other)
+                && other.OrderId == OrderId
+                && other.Commission == Commission
+                && other.CommissionAsset == CommissionAsset
+                && other.IsBuyer == IsBuyer
+                && other.IsMaker == IsMaker;
+        }
+
+        #endregion IEquatable
     }
 }

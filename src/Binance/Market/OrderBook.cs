@@ -2,13 +2,14 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Binance.Market
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
     /// An snapshot of the depth of market (DOM) for a specific symbol with
     /// price levels and aggregate quantities.
     /// </summary>
-    public sealed class OrderBook : ICloneable
+    public sealed class OrderBook : ICloneable, IEquatable<OrderBook>
     {
         #region Public Properties
 
@@ -65,7 +66,7 @@ namespace Binance.Market
             if (lastUpdateId <= 0)
                 throw new ArgumentException($"{nameof(OrderBook)} last update ID must be greater than 0.", nameof(lastUpdateId));
 
-            Symbol = symbol;
+            Symbol = symbol.FormatSymbol();
             LastUpdateId = lastUpdateId;
 
             _bids = new SortedDictionary<decimal, OrderBookPriceLevel>(new ReverseComparer<decimal>());
@@ -138,6 +139,9 @@ namespace Binance.Market
         /// <param name="asks"></param>
         internal void Modify(long lastUpdateId, IEnumerable<(decimal, decimal)> bids, IEnumerable<(decimal, decimal)> asks)
         {
+            if (lastUpdateId <= LastUpdateId)
+                throw new ArgumentException($"{nameof(OrderBook)}.{nameof(Modify)}: new ID must be greater than previous ID.");
+
             // Update order book bids.
             foreach (var bid in bids)
             {
@@ -208,6 +212,21 @@ namespace Binance.Market
         object ICloneable.Clone() { return Clone(); }
 
         #endregion ICloneable
+
+        #region IEquatable
+
+        public bool Equals(OrderBook other)
+        {
+            if (other == null)
+                return false;
+
+            return other.Symbol == Symbol
+                && other.LastUpdateId == LastUpdateId
+                && other.Bids.SequenceEqual(Bids)
+                && other.Asks.SequenceEqual(Asks);
+        }
+
+        #endregion IEquatable
 
         #region Private Classes
 

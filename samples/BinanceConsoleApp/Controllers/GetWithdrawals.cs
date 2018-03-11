@@ -2,7 +2,6 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Binance;
 
 // ReSharper disable PossibleMultipleEnumeration
 
@@ -43,7 +42,7 @@ namespace BinanceConsoleApp.Controllers
                 {
                     foreach (var withdrawal in withdrawals)
                     {
-                        Console.WriteLine($"  {withdrawal.Time().ToLocalTime()} - {withdrawal.Asset.PadLeft(4)} - {withdrawal.Amount:0.00000000} => {withdrawal.Address} - Status: {withdrawal.Status}");
+                        Console.WriteLine($"  {withdrawal.Time.ToLocalTime()} - {withdrawal.Asset.PadLeft(4)} - {withdrawal.Amount:0.00000000} => {withdrawal.Address} - Status: {withdrawal.Status}");
                     }
                 }
                 Console.WriteLine();

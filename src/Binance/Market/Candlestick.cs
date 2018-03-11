@@ -1,12 +1,13 @@
 ﻿using System;
 
-namespace Binance.Market
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
     /// Candlestick/K-Line which is uniquely identified by the symbol,
     /// interval, and open time.
     /// </summary>
-    public sealed class Candlestick
+    public sealed class Candlestick : IEquatable<Candlestick>, IChronological
     {
         #region Public Properties
 
@@ -23,7 +24,7 @@ namespace Binance.Market
         /// <summary>
         /// Get the open time.
         /// </summary>
-        public long OpenTime { get; }
+        public DateTime OpenTime { get; }
 
         /// <summary>
         /// Get the open price in quote asset units.
@@ -53,7 +54,7 @@ namespace Binance.Market
         /// <summary>
         /// Get the close time.
         /// </summary>
-        public long CloseTime { get; }
+        public DateTime CloseTime { get; }
 
         /// <summary>
         /// Get the volume in quote asset units.
@@ -74,6 +75,11 @@ namespace Binance.Market
         /// Get the taker buy quote asset volume.
         /// </summary>
         public decimal TakerBuyQuoteAssetVolume { get; }
+
+        /// <summary>
+        /// Get the candlestick time.
+        /// </summary>
+        public DateTime Time => OpenTime;
 
         #endregion Public Properties
 
@@ -98,24 +104,19 @@ namespace Binance.Market
         public Candlestick(
             string symbol,
             CandlestickInterval interval,
-            long openTime,
+            DateTime openTime,
             decimal open,
             decimal high,
             decimal low,
             decimal close,
             decimal volume,
-            long closeTime,
+            DateTime closeTime,
             decimal quoteAssetVolume,
             long numberOfTrades,
             decimal takerBuyBaseAssetVolume,
             decimal takerBuyQuoteAssetVolume)
         {
             Throw.IfNull(symbol, nameof(symbol));
-
-            if (openTime <= 0)
-                throw new ArgumentException($"{nameof(Candlestick)}: timestamp must be greater than 0.", nameof(openTime));
-            if (closeTime <= 0)
-                throw new ArgumentException($"{nameof(Candlestick)}: timestamp must be greater than 0.", nameof(closeTime));
 
             if (open < 0)
                 throw new ArgumentException($"{nameof(Candlestick)}: price must not be less than 0.", nameof(open));
@@ -138,7 +139,7 @@ namespace Binance.Market
             if (takerBuyQuoteAssetVolume < 0)
                 throw new ArgumentException($"{nameof(Candlestick)}: volume must not be less than 0.", nameof(takerBuyQuoteAssetVolume));
 
-            Symbol = symbol;
+            Symbol = symbol.FormatSymbol();
             Interval = interval;
             OpenTime = openTime;
             Open = open;
@@ -154,5 +155,29 @@ namespace Binance.Market
         }
 
         #endregion Constructors
+
+        #region IEquatable
+
+        public bool Equals(Candlestick other)
+        {
+            if (other == null)
+                return false;
+
+            return other.Symbol == Symbol
+                && other.Interval == Interval
+                && other.OpenTime.Equals(OpenTime)
+                && other.Open == Open
+                && other.High == High
+                && other.Low == Low
+                && other.Close == Close
+                && other.Volume == Volume
+                && other.CloseTime.Equals(CloseTime)
+                && other.QuoteAssetVolume == QuoteAssetVolume
+                && other.NumberOfTrades == NumberOfTrades
+                && other.TakerBuyBaseAssetVolume == TakerBuyBaseAssetVolume
+                && other.TakerBuyQuoteAssetVolume == TakerBuyQuoteAssetVolume;
+        }
+
+        #endregion IEquatable
     }
 }

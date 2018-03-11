@@ -1,12 +1,10 @@
-﻿using System;
-using Binance.Market;
-
-namespace Binance.Cache.Events
+﻿// ReSharper disable once CheckNamespace
+namespace Binance.Cache
 {
     /// <summary>
     /// Depth of market updated event.
     /// </summary>
-    public class OrderBookCacheEventArgs : EventArgs
+    public class OrderBookCacheEventArgs : CacheEventArgs
     {
         #region Public Properties
 

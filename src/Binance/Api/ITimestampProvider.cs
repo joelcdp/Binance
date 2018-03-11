@@ -1,10 +1,17 @@
-﻿using System.Threading;
+﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 
-namespace Binance.Api
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     public interface ITimestampProvider
     {
+        /// <summary>
+        /// Get or set the timestamp offset refresh period.
+        /// </summary>
+        TimeSpan TimestampOffsetRefreshPeriod { get; set; }
+
         /// <summary>
         /// Get the timestamp offset.
         /// </summary>

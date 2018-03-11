@@ -1,7 +1,5 @@
-﻿using Binance.Account;
-using Binance.Api;
-using Binance.Cache.Events;
-using System;
+﻿using System;
+using Binance.Cache;
 using Xunit;
 
 namespace Binance.Tests.Cache.Events
@@ -20,10 +18,10 @@ namespace Binance.Tests.Cache.Events
             var user = new BinanceApiUser("api-key");
             var commissions = new AccountCommissions(10, 10, 0, 0);
             var status = new AccountStatus(true, true, true);
-            long updateTime = 1234567890;
+            var time = DateTimeOffset.FromUnixTimeMilliseconds(DateTime.UtcNow.ToTimestamp()).UtcDateTime;
             var balances = new[] { new AccountBalance("BTC", 0.1m, 0.2m) };
 
-            var accountInfo = new AccountInfo(user, commissions, status, updateTime, balances);
+            var accountInfo = new AccountInfo(user, commissions, status, time, balances);
 
             var args = new AccountInfoCacheEventArgs(accountInfo);
 

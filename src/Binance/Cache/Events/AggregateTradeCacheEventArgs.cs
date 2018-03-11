@@ -1,10 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using Binance.Market;
+﻿using System.Collections.Generic;
 
-namespace Binance.Cache.Events
+// ReSharper disable once CheckNamespace
+namespace Binance.Cache
 {
-    public sealed class AggregateTradeCacheEventArgs : EventArgs
+    public sealed class AggregateTradeCacheEventArgs : CacheEventArgs
     {
         #region Public Properties
 

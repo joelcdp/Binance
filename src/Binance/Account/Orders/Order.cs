@@ -1,12 +1,13 @@
 ﻿using System;
-using Binance.Api;
+using System.Collections.Generic;
 
-namespace Binance.Account.Orders
+// ReSharper disable once CheckNamespace
+namespace Binance
 {
     /// <summary>
     /// An order that has been sent to the matching engine.
     /// </summary>
-    public sealed class Order : IChronological
+    public sealed class Order : IChronological, IEquatable<Order>
     {
         #region Public Properties
 
@@ -76,9 +77,19 @@ namespace Binance.Account.Orders
         public decimal IcebergQuantity { get; internal set; }
 
         /// <summary>
-        /// Get the timestamp.
+        /// Get the time.
         /// </summary>
-        public long Timestamp { get; internal set; }
+        public DateTime Time { get; internal set; }
+
+        /// <summary>
+        /// Get the is working flag.
+        /// </summary>
+        public bool IsWorking { get; internal set; }
+
+        /// <summary>
+        /// Get the fills.
+        /// </summary>
+        public IEnumerable<Fill> Fills { get; internal set; }
 
         #endregion Public Properties
 
@@ -100,7 +111,9 @@ namespace Binance.Account.Orders
         /// <param name="orderSide"></param>
         /// <param name="stopPrice"></param>
         /// <param name="icebergQuantity"></param>
-        /// <param name="timestamp"></param>
+        /// <param name="time"></param>
+        /// <param name="isWorking"></param>
+        /// <param name="fills"></param>
         public Order(
             IBinanceApiUser user,
             string symbol,
@@ -115,30 +128,29 @@ namespace Binance.Account.Orders
             OrderSide orderSide,
             decimal stopPrice,
             decimal icebergQuantity,
-            long timestamp)
+            DateTime time,
+            bool isWorking,
+            IEnumerable<Fill> fills = null)
             : this(user)
         {
             Throw.IfNullOrWhiteSpace(symbol, nameof(symbol));
 
             if (id < 0)
-                throw new ArgumentException($"{nameof(Order)} ID must not be less than 0.", nameof(id));
+                throw new ArgumentException($"{nameof(Order)}: ID must not be less than 0.", nameof(id));
 
             if (price < 0)
-                throw new ArgumentException($"{nameof(Order)} price must not be less than 0.", nameof(price));
+                throw new ArgumentException($"{nameof(Order)}: price must not be less than 0.", nameof(price));
             if (stopPrice < 0)
-                throw new ArgumentException($"{nameof(Order)} price must not be less than 0.", nameof(stopPrice));
+                throw new ArgumentException($"{nameof(Order)}: price must not be less than 0.", nameof(stopPrice));
 
             if (originalQuantity < 0)
-                throw new ArgumentException($"{nameof(Order)} quantity must not be less than 0.", nameof(originalQuantity));
+                throw new ArgumentException($"{nameof(Order)}: quantity must not be less than 0.", nameof(originalQuantity));
             if (executedQuantity < 0)
-                throw new ArgumentException($"{nameof(Order)} quantity must not be less than 0.", nameof(executedQuantity));
+                throw new ArgumentException($"{nameof(Order)}: quantity must not be less than 0.", nameof(executedQuantity));
             if (icebergQuantity < 0)
-                throw new ArgumentException($"{nameof(Order)} quantity must not be less than 0.", nameof(icebergQuantity));
+                throw new ArgumentException($"{nameof(Order)}: quantity must not be less than 0.", nameof(icebergQuantity));
 
-            if (timestamp <= 0)
-                throw new ArgumentException($"{nameof(Order)}: timestamp must be greater than 0.", nameof(timestamp));
-
-            Symbol = symbol;
+            Symbol = symbol.FormatSymbol();
             Id = id;
             ClientOrderId = clientOrderId;
             Price = price;
@@ -150,7 +162,10 @@ namespace Binance.Account.Orders
             Side = orderSide;
             StopPrice = stopPrice;
             IcebergQuantity = icebergQuantity;
-            Timestamp = timestamp;
+            Time = time;
+            IsWorking = isWorking;
+
+            Fills = fills ?? new Fill[] { };
         }
 
         /// <summary>
@@ -164,5 +179,29 @@ namespace Binance.Account.Orders
         }
 
         #endregion Constructors
+
+        #region IEquatable
+
+        public bool Equals(Order other)
+        {
+            if (other == null)
+                return false;
+
+            return other.Symbol == Symbol
+                && other.Id == Id
+                && other.ClientOrderId == ClientOrderId
+                && other.Price == Price
+                && other.OriginalQuantity == OriginalQuantity
+                && other.ExecutedQuantity == ExecutedQuantity
+                && other.Status == Status
+                && other.TimeInForce == TimeInForce
+                && other.Type == Type
+                && other.Side == Side
+                && other.StopPrice == StopPrice
+                && other.IcebergQuantity == IcebergQuantity
+                && other.Time.Equals(Time);
+        }
+
+        #endregion IEquatable
     }
 }
