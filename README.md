@@ -28,6 +28,19 @@ Built using [TAP (Task-based Asynchronous Pattern)](https://docs.microsoft.com/e
   * How to **efficiently** use combined streams with a single, application-wide, web socket (`BinanceWebSocketStream`).
 
 ## Getting Started
+### Binance Sign-up
+To use the private (*authenticated*) API methods you must have an account with Binance and create an API-Key. Please use my Referral ID: **10899093** when you [**Register**](https://www.binance.com/register.html?ref=10899093) (*it's an easy way to give back at no cost to you*).
+
+*NOTE*: An account is *not* required to access the public market data.
+
+### Installation
+Using [Nuget](https://www.nuget.org/packages/Binance/) Package Manager:
+```
+PM> Install-Package Binance
+```
+[![](https://img.shields.io/nuget/v/Binance.svg)](https://www.nuget.org/packages/Binance)\
+[![](https://img.shields.io/nuget/dt/Binance.svg)](https://www.nuget.org/packages/Binance)
+
 ### Example Usage
 #### REST API
 Test connectivity.
@@ -140,16 +153,14 @@ webSocketCache.Subscribe(Symbol.BTC_USDT, evt =>
 webSocketCache.Unsubscribe();
 ```
 
-### Binance Sign-up
-To use the private (*authenticated*) API methods you must have an account with Binance and create an API Key. Please use my Referral ID: **10899093** when you [**Register**](https://www.binance.com/register.html?ref=10899093) (*an account is not required to access the public market data*). It's an easy way to give back at no cost to you.
+## Documentation
+See: [**Wiki**](https://github.com/sonvister/Binance/wiki)
 
-### Installation
-Using [Nuget](https://www.nuget.org/packages/Binance/) Package Manager:
-```
-PM> Install-Package Binance
-```
-[![](https://img.shields.io/nuget/v/Binance.svg)](https://www.nuget.org/packages/Binance)\
-[![](https://img.shields.io/nuget/dt/Binance.svg)](https://www.nuget.org/packages/Binance)
+***NOTE**: The [samples](https://github.com/sonvister/Binance/blob/master/samples) demonstrate up-to-date usage of this library.*
+
+### Binance Exchange API (*for reference*)
+REST/WebSocket details: [Binance Official Documentation](https://github.com/binance-exchange/binance-official-api-docs)\
+REST/WebSocket questions: [Binance Official API Telegram](https://t.me/binance_api_english) (*not for questions about this library*)
 
 ## Development
 The master branch is *currently* used for development and may differ from the latest release.\
@@ -160,24 +171,9 @@ To get the source code for a particular release, first select the corresponding 
 
 ![Build status](https://travis-ci.org/sonvister/Binance.svg?branch=master)
 
-## Documentation
-See: [**Wiki**](https://github.com/sonvister/Binance/wiki)\
-[**Architecture**](https://github.com/sonvister/Binance/wiki/Architecture)
-
-***NOTE**: Some documentation is out-of-date ...will be updated soon.*\
-***NOTE**: The [samples](https://github.com/sonvister/Binance/blob/master/samples) demonstrate up-to-date usage of this library.*
-
-### Binance Exchange API (*for reference*)
-REST/WebSocket details: [Binance Official Documentation](https://github.com/binance-exchange/binance-official-api-docs)\
-REST/WebSocket questions: [Binance Official API Telegram](https://t.me/binance_api_english) (*not for questions about this library*)
-
 ## Donate
-**LTC**: MNhGkftcFDE7TsFFvtE6W9VVKhxH74T3eM or 3GV8SnUeJ6NgfMyMq1EkgWF611Mq6c78sU\
 **DCR**: Dsog2jYLS65Y3N2jDQSxsiBYC3SRqq7TGd4\
-**XEM**: NC3HR4-V46BTS-LIKEE4-2GZQBB-FHBUXO-CG7EBO-VIMP\
-**DASH**: XmFvpRgwfDRdN9wbrZjHZeH63Rt9CwHqUf\
-**ZEC**: t1Ygz58dkcx2WXuGCjGiPo8w7Q1dcCSscGJ\
-**ETH**: 0x3BFd7B3EAA6aE6BCF861B9B1803d67abe9360bca\
+**LTC**: MNhGkftcFDE7TsFFvtE6W9VVKhxH74T3eM\
 **BTC**: 3JjG3tRR1dx98UJyNdpzpkrxRjXmPfQHk9
 
 Thank you.

@@ -186,15 +186,12 @@ namespace Binance
         {
             Throw.IfNull(api, nameof(api));
 
-            var symbols = string.IsNullOrWhiteSpace(symbol)
-                ? await api.SymbolsAsync(token).ConfigureAwait(false)
-                : new [] { symbol };
+             var cancelOrderIds = new List<string>();
 
-            var cancelOrderIds = new List<string>();
-
-            foreach (var s in symbols)
+            IEnumerable<Order> orders;
+            do
             {
-                var orders = await api.GetOpenOrdersAsync(user, s, recvWindow, token)
+                orders = await api.GetOpenOrdersAsync(user, symbol, recvWindow, token)
                     .ConfigureAwait(false);
 
                 foreach (var order in orders)
@@ -204,13 +201,13 @@ namespace Binance
 
                     cancelOrderIds.Add(cancelOrderId);
                 }
-            }
+            } while (orders.Any());
 
             return cancelOrderIds;
         }
 
         /// <summary>
-        /// Get trades associated with an order.
+        /// Get account trades associated with an order.
         /// 
         /// NOTE: Without any trade reference (e.g. first and last trade ID),
         ///       this must query ALL account trades for a symbol.
@@ -220,7 +217,7 @@ namespace Binance
         /// <param name="recvWindow"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public static async Task<IEnumerable<AccountTrade>> GetTradesAsync(this IBinanceApi api, Order order, long recvWindow = default, CancellationToken token = default)
+        public static async Task<IEnumerable<AccountTrade>> GetAccountTradesAsync(this IBinanceApi api, Order order, long recvWindow = default, CancellationToken token = default)
         {
             Throw.IfNull(api, nameof(api));
             Throw.IfNull(order, nameof(order));

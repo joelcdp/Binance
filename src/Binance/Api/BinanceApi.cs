@@ -435,6 +435,7 @@ namespace Binance
         public virtual async Task<Order> PlaceAsync(ClientOrder clientOrder, long recvWindow = default, CancellationToken token = default)
         {
             Throw.IfNull(clientOrder, nameof(clientOrder));
+            Throw.IfNull(clientOrder.Side, nameof(clientOrder.Side));
 
             var limitOrder = clientOrder as LimitOrder;
             var stopOrder = clientOrder as IStopOrder;
@@ -444,14 +445,14 @@ namespace Binance
                 Symbol = clientOrder.Symbol.FormatSymbol(),
                 OriginalQuantity = clientOrder.Quantity,
                 Price = limitOrder?.Price ?? 0,
-                Side = clientOrder.Side,
+                Side = clientOrder.Side.Value,
                 Type = clientOrder.Type,
                 Status = OrderStatus.New,
                 TimeInForce = limitOrder?.TimeInForce ?? TimeInForce.GTC
             };
 
             // Place the order.
-            var json = await HttpClient.PlaceOrderAsync(clientOrder.User, clientOrder.Symbol, clientOrder.Side, clientOrder.Type,
+            var json = await HttpClient.PlaceOrderAsync(clientOrder.User, clientOrder.Symbol, clientOrder.Side.Value, clientOrder.Type,
                 clientOrder.Quantity, limitOrder?.Price ?? 0, clientOrder.Id, clientOrder.Type == OrderType.LimitMaker ? null : limitOrder?.TimeInForce,
                 stopOrder?.StopPrice ?? 0, limitOrder?.IcebergQuantity ?? 0, recvWindow, false, PlaceOrderResponseType.Full, token);
 
@@ -462,7 +463,6 @@ namespace Binance
 
                 // Update client order properties.
                 clientOrder.Id = order.ClientOrderId;
-                clientOrder.Time = order.Time;
             }
             catch (Exception e)
             {
@@ -475,12 +475,13 @@ namespace Binance
         public virtual async Task TestPlaceAsync(ClientOrder clientOrder, long recvWindow = default, CancellationToken token = default)
         {
             Throw.IfNull(clientOrder, nameof(clientOrder));
+            Throw.IfNull(clientOrder.Side, nameof(clientOrder.Side));
 
             var limitOrder = clientOrder as LimitOrder;
             var stopOrder = clientOrder as IStopOrder;
 
             // Place the TEST order.
-            var json = await HttpClient.PlaceOrderAsync(clientOrder.User, clientOrder.Symbol, clientOrder.Side, clientOrder.Type,
+            var json = await HttpClient.PlaceOrderAsync(clientOrder.User, clientOrder.Symbol, clientOrder.Side.Value, clientOrder.Type,
                 clientOrder.Quantity, limitOrder?.Price ?? 0, clientOrder.Id, clientOrder.Type == OrderType.LimitMaker ? null : limitOrder?.TimeInForce,
                 stopOrder?.StopPrice ?? 0, limitOrder?.IcebergQuantity ?? 0, recvWindow, true, PlaceOrderResponseType.Ack, token);
 
@@ -668,7 +669,7 @@ namespace Binance
             return withdrawRequest.Id;
         }
 
-        public async Task<IEnumerable<Deposit>> GetDepositsAsync(IBinanceApiUser user, string asset = null, DepositStatus? status = null, DateTime startTime = default, DateTime endTime = default, long recvWindow = 0, CancellationToken token = default)
+        public async Task<IEnumerable<Deposit>> GetDepositsAsync(IBinanceApiUser user, string asset = null, DepositStatus? status = null, DateTime startTime = default, DateTime endTime = default, long recvWindow = default, CancellationToken token = default)
         {
             var json = await HttpClient.GetDepositsAsync(user, asset, status, startTime, endTime, recvWindow, token)
                 .ConfigureAwait(false);
@@ -761,9 +762,9 @@ namespace Binance
             return withdrawals;
         }
 
-        public virtual async Task<DepositAddress> GetDepositAddressAsync(IBinanceApiUser user, string asset, CancellationToken token = default)
+        public virtual async Task<DepositAddress> GetDepositAddressAsync(IBinanceApiUser user, string asset, long recvWindow = default, CancellationToken token = default)
         {
-            var json = await HttpClient.GetDepositAddressAsync(user, asset, token)
+            var json = await HttpClient.GetDepositAddressAsync(user, asset, recvWindow, token)
                 .ConfigureAwait(false);
 
             bool success;
@@ -797,9 +798,41 @@ namespace Binance
             return depositAddress;
         }
 
-        public virtual async Task<string> GetAccountStatusAsync(IBinanceApiUser user, CancellationToken token = default)
+        public virtual async Task<decimal> GetWithdrawFeeAsync(IBinanceApiUser user, string asset, long recvWindow = default, CancellationToken token = default)
         {
-            var json = await HttpClient.GetAccountStatusAsync(user, token)
+            var json = await HttpClient.GetWithdrawFeeAsync(user, asset, recvWindow, token)
+                .ConfigureAwait(false);
+
+            bool success;
+
+            try
+            {
+                var jObject = JObject.Parse(json);
+
+                success = jObject["success"].Value<bool>();
+
+                if (success)
+                {
+                    return jObject["withdrawFee"].Value<decimal>();
+                }
+            }
+            catch (Exception e)
+            {
+                throw NewFailedToParseJsonException(nameof(GetDepositAddressAsync), json, e);
+            }
+
+            // ReSharper disable once InvertIf
+            if (!success)
+            {
+                throw NewBinanceWApiException(nameof(GetWithdrawFeeAsync), json, asset);
+            }
+
+            return 0;
+        }
+        
+        public virtual async Task<string> GetAccountStatusAsync(IBinanceApiUser user, long recvWindow = default, CancellationToken token = default)
+        {
+            var json = await HttpClient.GetAccountStatusAsync(user, recvWindow, token)
                 .ConfigureAwait(false);
 
             try { return JObject.Parse(json)["msg"].Value<string>(); }
